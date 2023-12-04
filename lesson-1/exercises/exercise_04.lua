@@ -1,5 +1,8 @@
 local lpeg = require "lpeg"
 local lu = require "luaunit"
+--
+-- Exercise 4: Matching the whole subject
+--
 
 local dot = lpeg.P(".")
 local negation = lpeg.P("-")
@@ -28,9 +31,6 @@ local number = (integer * dot * positive_integer)
                + (integer * dot)
                + integer
 
---
--- Exercise 4
---
 -- Matches sums of numbers and captures, captures numbers and the position of the addition operator. Only 
 -- valid expressions are matched (i.e the whole string must match).
 --

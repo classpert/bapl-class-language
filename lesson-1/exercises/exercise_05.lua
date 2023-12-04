@@ -1,6 +1,10 @@
 local lpeg = require "lpeg"
 local lu = require "luaunit"
 
+--
+-- Exercise 5: Adding and optional sign to numerals
+--
+
 local dot = lpeg.P(".")
 local sign = lpeg.S("-+")
 local whitespace = lpeg.S(" \t")^0 -- TODO(peter): More whitespaces...
@@ -30,9 +34,6 @@ local number = ((integer * dot * positive_integer)
                + (integer * dot)
                + integer) * whitespace
 
---
--- Exercise 4
---
 -- Matches sums of numbers and captures, captures numbers and the position of the addition operator. Only 
 -- valid expressions are matched (i.e the whole string must match).
 --
@@ -103,7 +104,7 @@ TestExpression = {}
         lu.assertIsNil(sum:match("  +  "))
         lu.assertIsNil(sum:match("  +  +  "))
         lu.assertIsNil(sum:match(" 1234 +"))
-        lu.assertEquals(sum:match(" 1234 + 0.34+"))
+        lu.assertIsNil(sum:match(" 1234 + 0.34+"))
     end
 
 os.exit(lu.LuaUnit:run())

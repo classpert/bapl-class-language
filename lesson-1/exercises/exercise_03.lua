@@ -1,6 +1,11 @@
 local lpeg = require "lpeg"
 local lu = require "luaunit"
 
+--
+-- Exercise 3: Position capture
+--
+
+
 local dot = lpeg.P(".")
 local negation = lpeg.P("-")
 local whitespace = lpeg.S(" \t") -- TODO(peter): More whitespaces...
@@ -28,10 +33,6 @@ local number = (integer * dot * positive_integer)
                + (integer * dot)
                + integer
 
-
---
--- Exercise 3
---
 
 -- Matches sums of numbers, captures numbers and the position of the addition operator.
 --

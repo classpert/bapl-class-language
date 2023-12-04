@@ -2,6 +2,10 @@ local inspect = require "inspect"
 local lpeg = require "lpeg"
 local lu = require "luaunit"
 
+--
+-- Exercise 6: Adding more operators
+--
+
 local dot = lpeg.P(".")
 local sign = lpeg.S("-+")
 local whitespace = lpeg.S(" \t")^0 -- TODO(peter): More whitespaces...
@@ -82,9 +86,6 @@ local function eval_ast(ast)
         error("Bad expression")
     end
 end
---
--- Exercise 4
---
 -- Matches expressions consisting of operator '+', '-', '%', '*', '/' and '^'. 
 --
 -- NOTE: This version is not able to parse recursive expressions such as "18 + 3^(34+343*3)".
