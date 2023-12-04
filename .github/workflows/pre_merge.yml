@@ -1,0 +1,17 @@
+name: Lua Exercises CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  run_exercises:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Lua deps
+        run: sudo apt install bash lua5.3 lua-inspect lua-unit lua-lpeg lua-any luakit luarocks
+      - name: Run exercise tests
+        run: bash scripts/check_exercises.sh
