@@ -1,4 +1,4 @@
-
+local inspect = require "inspect"
 local lpeg = require "lpeg"
 local pt = require "pt"
 
@@ -26,35 +26,6 @@ local opE = lpeg.C(lpeg.P"^") * space
 local OP = "(" * space
 local CP = ")" * space
 
--- Simple AST builder (guessing here... :D)
-local function build_ast(lst)
-    -- print(pt.pt(lst))
-    if #lst == 1 then
-        -- Leaf nodes are just numbers
-        return lst[1]
-    elseif #lst >= 3 and lst[2] ~= '^' then
-        -- Assume input is on the form <operand> op <operand> op ...
-        -- and left associative
-        local ast = {}
-        ast.node = lst[#lst - 1]
-        ast.right = lst[#lst]
-
-        ast.left = build_ast(table.move(lst, 1, #lst - 2, 1, {}))
-        return ast
-    elseif #lst >= 3 and lst[2] == '^' then
-        -- Assume input is on the form <operand> op <operand> op ...
-        -- and right associative
-        local ast = {}
-        ast.node = lst[2]
-        ast.left = lst[1]
-
-        ast.right = build_ast(table.move(lst, 3, #lst, 1, {}))
-        return ast
-    else
-       error("Bad expression") 
-    end
-end
-
 -- Function to evaluate an AST as constructed above.
 local function eval_ast(ast)
     local ops = {
@@ -70,10 +41,34 @@ local function eval_ast(ast)
     elseif type(ast) == "table" then
         return ops[ast.node](eval_ast(ast.left), eval_ast(ast.right))
     else
+        inspect.inspect(ast)
         error("Bad expression")
     end
 end
 
+--
+-- The following two functions builds the AST.
+--
+
+
+-- Use fold capture to process left associative parts of the grammar into an AST.
+-- Inspired by examples in "Mastering LPeg". 
+function processOpL (a, op, b)
+    return {node = op, left = a, right = b}
+end
+
+
+-- Use table capture to deal with the right associative parts of the grammar.
+-- Note: For exponent I couldn't figure out how to do a right fold using the Cf/Cg combo.
+function processOpR (lst)
+    if #lst == 1 then
+        return lst[1]
+    else
+        left = table.remove(lst, 1)
+        op = table.remove(lst, 1) 
+        return {left = left, node = op, right = processOpR(lst)}
+    end
+end
 
 local primary = lpeg.V"primary"
 local exponent = lpeg.V"exponent"
@@ -83,11 +78,10 @@ local expression = lpeg.V"expression"
 local g = lpeg.P{
     "expression",
     primary = numeral + OP * expression * CP,
-    exponent = space * lpeg.Ct(primary * (opE * primary)^0) / build_ast,
-    term = space * lpeg.Ct(exponent * (opM * exponent)^0) / build_ast,
-    expression = space * lpeg.Ct(term * (opA * term)^0) / build_ast
+    exponent = space * lpeg.Ct((primary * opE)^0 * primary) / processOpR,
+    term = space * lpeg.Cf(exponent * lpeg.Cg(opM * exponent)^0, processOpL),
+    expression = space * lpeg.Cf(term * lpeg.Cg(opA * term)^0, processOpL),
 }
-
 g = g * -1
 
 local function eval(string)
