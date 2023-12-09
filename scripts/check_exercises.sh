@@ -5,12 +5,11 @@ for sut in $(find . -iregex ".*\(exercise_.*\|lesson_test\).lua"); do
     echo "Running tests in ${sut}" 
     sut_dir=$(dirname ${sut}) 
     sut_file=$(basename ${sut})
-    pushd ${sut_dir} > /dev/null
-    lua ${sut_file}
+    sut_index=$(echo $sut_file | grep -o "[0-9]\+")
+    LUA_PATH="${sut_dir}/?.lua;${sut_dir}/components_${sut_index}/?.lua;;" lua ${sut}
     if [ $? -ne 0 ]; then
         EXIT_CODE=1
     fi
-    popd > /dev/null
 done
 
 exit $EXIT_CODE
