@@ -233,4 +233,40 @@ diff -Naur lesson-2/exercises/components_03/machine.lua lesson-2/exercises/compo
 ```
 for a full set of changes.
 
+## Exercise 06: Floating-point Numbers
 
+### Part A
+These can of expression where already supported by the compiler in exercise 01.
+
+### Part B
+To extend `numerals` with E-notation I did the following updates:
+```
+diff -Naur lesson-2/exercises/components_05/compiler.lua lesson-2/exercises/components_06/compiler.lua
+--- lesson-2/exercises/components_05/compiler.lua       2023-12-10 10:34:57.670711247 +0100
++++ lesson-2/exercises/components_06/compiler.lua       2023-12-10 14:28:02.569160002 +0100
+@@ -22,17 +22,15 @@
+ local positive_integer = digit^1
+ local integer = sign^-1 * positive_integer
+
+--- START CHANGES FOR EXERCISE 02: HEXADECIMAL NUMBERS
+ local hex_digit = lpeg.R("09") + lpeg.R("af") + lpeg.R("AF")
+ local hex_integer = sign^-1 * "0" * lpeg.S("xX") * hex_digit^1
+
+-local numeral = ((hex_integer
+-                   + (integer * dot * positive_integer)
+-                   + (sign^-1 * dot * positive_integer)
+-                   + (integer * dot)
+-                   + integer) / toNumberNode) * space
+-
+--- END CHANGES FOR EXERCISE 02: HEXADECIMAL NUMBERS
++local numeral_wo_e = (hex_integer
++                      + (integer * dot * positive_integer)
++                      + (sign^-1 * dot * positive_integer)
++                      + (integer * dot)
++                      + integer)
++local numeral = ((numeral_wo_e * (lpeg.S("eE") * integer)^0) / toNumberNode) * space
+
+ -- Operators
+ local opC = lpeg.C(lpeg.P"!=" + "==" + "<=" + ">=" + "<" + ">") * space
+[
+```
