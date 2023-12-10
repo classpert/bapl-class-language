@@ -5,7 +5,7 @@
 
 -- Part A.
 --
---      Manual executuin of stack machine program
+--      Manual execution of stack machine program
 --
 --      Instruction                 Stack
 --
