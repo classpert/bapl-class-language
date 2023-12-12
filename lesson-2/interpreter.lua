@@ -1,110 +1,92 @@
-local lpeg = require "lpeg"
-local pt = require "pt"
+#!/usr/bin/env lua
 
-----------------------------------------------------
-local function node (num)
-  return {tag = "number", val = tonumber(num)}
-end
+require 'machine'
+local compiler = require 'compiler'
 
-local space = lpeg.S(" \t\n")^0
-local numeral = lpeg.R("09")^1 / node  * space
-
-local OP = "(" * space
-local CP = ")" * space
-
-local opA = lpeg.C(lpeg.S"+-") * space
-local opM = lpeg.C(lpeg.S"*/") * space
+local machine = Machine:new()
+local trace = false
+local input = io.stdin
 
 
--- Convert a list {n1, "+", n2, "+", n3, ...} into a tree
--- {...{ op = "+", e1 = {op = "+", e1 = n1, n2 = n2}, e2 = n3}...}
-local function foldBin (lst)
-  local tree = lst[1]
-  for i = 2, #lst, 2 do
-    tree = { tag = "binop", e1 = tree, op = lst[i], e2 = lst[i + 1] }
-  end
-  return tree
-end
 
-local factor = lpeg.V"factor"
-local term = lpeg.V"term"
-local exp = lpeg.V"exp"
 
-grammar = lpeg.P{"exp",
-  factor = numeral + OP * exp * CP,
-  term = lpeg.Ct(factor * (opM * factor)^0) / foldBin,
-  exp = lpeg.Ct(term * (opA * term)^0) / foldBin,
-}
+-- Helpers
 
-grammar = space * grammar * -1
-
-local function parse (input)
-  return grammar:match(input)
-end
-
-----------------------------------------------------
-
-local function addCode (state, op)
-  local code = state.code
-  code[#code + 1] = op
+-- Evaluate a string representing an expression in our language. 
+--
+--
+-- Note: For now we just compile an expression, run it through the virtual machine and return the the TOS. In future
+--       implementations we'll make this more elaborate.
+local function eval (str)
+    local program = compiler.compile(str)
+    machine:load(program)
+    machine:setTrace(trace)
+    machine:run()
+    return machine:tos()
 end
 
 
-local ops = {["+"] = "add", ["-"] = "sub",
-             ["*"] = "mul", ["/"] = "div"}
 
-local function codeExp (state, ast)
-  if ast.tag == "number" then
-    addCode(state, "push")
-    addCode(state, ast.val)
-  elseif ast.tag == "binop" then
-    codeExp(state, ast.e1)
-    codeExp(state, ast.e2)
-    addCode(state, ops[ast.op])
-  else error("invalid tree")
-  end
-end
+-- Read, Evaluate, Print, Loop
+local function repl ()
+    count = 0
+    while true do
+        -- print prompt
+        io.stdout:write(string.format("%d > ", count))
+        io.stdout:flush()
 
-local function compile (ast)
-  local state = { code = {} }
-  codeExp(state, ast)
-  return state.code
-end
-
-----------------------------------------------------
-
-local function run (code, stack)
-  local pc = 1
-  local top = 0
-  while pc <= #code do
-    if code[pc] == "push" then
-      pc = pc + 1
-      top = top + 1
-      stack[top] = code[pc]
-    elseif code[pc] == "add" then
-      stack[top - 1] = stack[top - 1] + stack[top]
-      top = top - 1
-    elseif code[pc] == "sub" then
-      stack[top - 1] = stack[top - 1] - stack[top]
-      top = top - 1
-    elseif code[pc] == "mul" then
-      stack[top - 1] = stack[top - 1] * stack[top]
-      top = top - 1
-    elseif code[pc] == "div" then
-      stack[top - 1] = stack[top - 1] / stack[top]
-      top = top - 1
-    else error("unknown instruction")
+        local line = input:read("l")
+        if line then
+            local result = eval(line)
+            io.stdout:write(result, "\n")
+        else
+            break
+        end
+        count = count + 1
     end
-    pc = pc + 1
-  end
+end
+
+local function execute ()
+    local text = input:read("a")
+    local result = eval(text)
+    io.stdout:write(result, "\n")
+end
+
+-- Parse command line arguments.
+function parseArgs (arg)
+    local pos = 1
+    local result = {
+        trace = false,
+        input = io.stdin,
+    }
+    while pos <= #arg do
+        if arg[pos] == "-t" or arg[pos] == "--trace" then
+            result.trace = true
+        elseif arg[pos] == "-l" or arg[pos] == "--load" then
+            if (pos + 1 <= #arg) then
+                result.input = assert(io.open(arg[pos + 1], "r"))
+                pos = pos + 1
+            else
+                io.stderr:write("Expected filename after option -l!", "\n")
+            end
+        end
+        pos = pos + 1
+    end
+
+    return result
 end
 
 
-local input = io.read("a")
-local ast = parse(input)
-print(pt.pt(ast))
-local code = compile(ast)
-print(pt.pt(code))
-local stack = {}
-run(code, stack)
-print(stack[1])
+-----------------------------------------------------------------
+
+local result = parseArgs(arg)
+trace = result.trace
+input = result.input
+
+if input == io.stdin then
+    -- drop into line-by-line evaluating repl()
+    repl()
+else
+    -- execute the program in file.
+    execute()
+end
