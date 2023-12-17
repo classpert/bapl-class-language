@@ -12,6 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Install Lua deps
-        run: sudo apt install bash lua5.3 lua-inspect lua-unit lua-lpeg lua-any luakit luarocks
+        run: sudo apt-get -y update && sudo apt-get -y install bash lua5.3 lua-inspect lua-unit lua-lpeg lua-any luakit luarocks
       - name: Run exercise tests
         run: bash scripts/check_exercises.sh
