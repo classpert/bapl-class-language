@@ -6,6 +6,7 @@ local lpeg = require "lpeg"
 local pt = (require "inspect").inspect
 
 require "elements/containers/tree"
+require "elements/containers/stack"
 require "machine"
 
 local ERROR_CODES = {
@@ -14,11 +15,13 @@ local ERROR_CODES = {
     -- semantical errors
     UNDEFINED_VARIABLE = 0xE201,
     UNEXPECTED_TAG     = 0xE202,
+    NO_LOOP            = 0xE203,
 }
 local ERROR_MESSAGES = {
     [ERROR_CODES.SYNTAX]             = "Syntax Error",
     [ERROR_CODES.UNDEFINED_VARIABLE] = "Undefined variable",
     [ERROR_CODES.UNEXPECTED_TAG]     = "Unexpected tag",
+    [ERROR_CODES.NO_LOOP]            = "Break without a loop",
 }
 
 local binop_code_lookup = {
@@ -208,6 +211,7 @@ local reserved = {
     ["for"]    = true, 
     ["do"]     = true, 
     ["end"]    = true, 
+    ["break"]  = true, 
     ["fun"]    = true,
     ["return"] = true,
     ["and"]    = true,
@@ -292,6 +296,7 @@ local grammar = lpeg.P{
                  + space * (R("while") * expression * block) / node("while_", "condition", "whileblock")
                  + space * (R("return") * expression) / node("return", "expression")
                  + space * (R("@") * expression) / node("print", "expression")
+                 + space * (R("break")) / node("break_")
                  + space * (identifier * opAssign * expression)^-1 / node("assignment", "identifier", "expression"),
     expression = space * grammar_expression,
     space      = grammar_space,
@@ -308,7 +313,7 @@ local Compiler = {}
 Compiler.__index = Compiler
 
 function Compiler:new ()
-    local compiler = {env_ = {}, code_ = {}}
+    local compiler = {env_ = {}, code_ = {}, loop_ctx_ = Stack:new()}
     setmetatable(compiler, Compiler)
     return compiler
 end
@@ -476,6 +481,8 @@ function Compiler:codeGenSeq(ast)
         local condition  = node.condition
         local whileblock = node.whileblock
         
+        -- Create a new "loop context" where we save addresses to jump instruction for "break" statements.
+        self.loop_ctx_:push({})
         -- Save the location of the test condition code.
         local cond_location = #self.code_ + 1
         -- Generate the instructions for the condition.
@@ -492,6 +499,17 @@ function Compiler:codeGenSeq(ast)
         table.insert(self.code_, self:branchRelative(Machine.OPCODES.B, cond_location - self:nextCodeLoc()))
         -- insert conditional jump to end of whileblock.
         self.code_[bz_location] = self:branchRelative(Machine.OPCODES.BZ, self:nextCodeLoc() - bz_location)
+        local ctx = self.loop_ctx_:pop()
+        for _, address in pairs(ctx) do
+            self.code_[address] = self:branchRelative(Machine.OPCODES.B, self:nextCodeLoc() - address)
+        end
+    elseif node.tag == "break_" then
+        assert(#self.loop_ctx_ > 0, make_error(ERROR_CODES.NO_LOOP, "Break without active Loop"))
+        local ctx = self.loop_ctx_:peek()
+        -- Sentinel for jump instruction.
+        table.insert(self.code_, 0xdeadc0de)
+        -- Save address in current loop context, we will fill this address with a branch instruction.
+        table.insert(ctx, #self.code_)
     elseif node.tag == "return" then
         if node.expression ~= nil then
             self:codeGenExp(node.expression)

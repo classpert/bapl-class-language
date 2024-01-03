@@ -54,4 +54,31 @@ while n > 0 or m
     {
         m = 0;
     }
+};
+
+
+# Test break statement
+n = 9;
+while n > 0
+{
+    @ n;
+    if n == 6
+    {
+        # break out of outer loop
+        break;
+    };
+
+    m = n;
+    while m > 0
+    {
+        if m < 5
+        {
+            # break out of inner loop.
+            break; 
+        };
+        @ m;
+        m = m - 1;
+    };
+
+    n = n - 1;
 }
