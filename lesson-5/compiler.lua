@@ -285,15 +285,16 @@ local ifrest    = lpeg.V"ifrest"
 -- Statement grammar
 local grammar = lpeg.P{
     "sequence",
-    sequence   = statement * (T";" * sequence)^-1 / node("sequence"),
-    block      = space * T"{" * sequence * T";"^-1 * T"}",
+    sequence   = block * (sequence)^-1 / node("sequence")
+                 + statement * (T";" * sequence)^-1 / node("sequence"),
     ifstmt     = space * (R("if") * expression * block * (ifrest + R("else") * block)^-1) 
                          / node("if_", "condition", "ifblock", "elseblock"),
     ifrest     = space * (R("elseif") * expression * block * (ifrest + R("else") * block)^-1) 
                          / node("if_", "condition", "ifblock", "elseblock"),
-    statement  = space * block 
-                 + space * ifstmt
+    block      = space * T"{" * sequence * T";"^-1 * T"}"
                  + space * (R("while") * expression * block) / node("while_", "condition", "whileblock")
+                 + space * ifstmt,
+    statement  = space * block 
                  + space * (R("return") * expression) / node("return", "expression")
                  + space * (R("@") * expression) / node("print", "expression")
                  + space * (R("break")) / node("break_")
@@ -504,7 +505,7 @@ function Compiler:codeGenSeq(ast)
             self.code_[address] = self:branchRelative(Machine.OPCODES.B, self:nextCodeLoc() - address)
         end
     elseif node.tag == "break_" then
-        assert(#self.loop_ctx_ > 0, make_error(ERROR_CODES.NO_LOOP, "Break without active Loop"))
+        assert(#self.loop_ctx_ > 0, make_error(ERROR_CODES.NO_LOOP, {message = "Break without active Loop"}))
         local ctx = self.loop_ctx_:peek()
         -- Sentinel for jump instruction.
         table.insert(self.code_, 0xdeadc0de)

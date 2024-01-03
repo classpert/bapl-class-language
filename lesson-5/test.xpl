@@ -19,7 +19,7 @@ while r != 0 and (x / r - r) * (x / r - r) > e
     #}
     @ r;
     r = (x / r + r) / 2;
-};
+}
 @ r;
 
 # Some if-statement tests.
@@ -42,13 +42,13 @@ while n > 0 or m
     else
     {
         @ n;
-    };
+    }
     n = n - 1;
 
     if n == 0
     {
         m = 1;
-    };
+    }
 
     if n < -2
     {
@@ -66,7 +66,7 @@ while n > 0
     {
         # break out of outer loop
         break;
-    };
+    }
 
     m = n;
     while m > 0
@@ -78,7 +78,7 @@ while n > 0
         };
         @ m;
         m = m - 1;
-    };
+    }
 
     n = n - 1;
 }
