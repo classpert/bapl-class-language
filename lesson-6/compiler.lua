@@ -274,6 +274,7 @@ local grammar = lpeg.P{
     "program",
     program     = space * sequence,
     primary     = lpeg.Ct(R"new" * (T"[" * expression * T"]")^1) /  processNew
+                + lpeg.Ct(T"{" * expression * (T"," * expression)^0 * T"}") / node("newconstr", "elements")
                 + numeral 
                 + T"(" * expression * T")"
                 + lhs,
@@ -453,6 +454,20 @@ function Compiler:codeGenExp(ast)
         table.insert(self.code_, OPCODES.make(OPCODES.GETARR)) 
     elseif node.tag == "new" then
         self:codeGenNew(ast)
+    elseif node.tag == "newconstr" then
+        local elements = node.elements
+        local size     = #elements
+        table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+        table.insert(self.code_, size)
+        table.insert(self.code_, OPCODES.make(OPCODES.NEWARR)) 
+        table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+        table.insert(self.code_, 1)
+        for _, e in ipairs(elements) do
+            self:codeGenExp(e)
+            table.insert(self.code_, OPCODES.make(OPCODES.SETARRP))  
+            table.insert(self.code_, OPCODES.make(OPCODES.INC))
+        end
+        table.insert(self.code_, OPCODES.make(OPCODES.POP))
     else
         error(make_error(ERROR_CODES.UNEXPECTED_TAG, {tag = node.tag}))
     end

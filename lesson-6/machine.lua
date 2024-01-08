@@ -40,6 +40,7 @@ Machine.OPCODES.GE        = 0x2b -- Pop 2 elements TOS(0), TOS(1) and push the c
 Machine.OPCODES.NEG       = 0x30 -- Pop 1 element TOS(0) and push the negation -TOS(0) to the stack.
 Machine.OPCODES.NOT       = 0x31 -- Pop 1 element TOS(0) and push the logical negation !TOS(0) to the stack.
 Machine.OPCODES.DEC       = 0x32 -- Pop 1 element TOS(0) and push TOS(0) - 1
+Machine.OPCODES.INC       = 0x33 -- Pop 1 element TOS(0) and push TOS(0) + 1
 Machine.OPCODES.RETURN    = 0xA0 -- Exit current function. Note: for now it exits the VM run function.
 Machine.OPCODES.JMP       = 0xA1 -- Jump unconditionally and absolutely pc <- memory[pc + 1]
 -- TODO(peter): Make the branch instruction more compact. We can use the bitfields after the "variant"
@@ -105,6 +106,7 @@ Machine.OPCODES.NAME_LOOKUP = {
     [Machine.OPCODES.NEG]       = "NEG",
     [Machine.OPCODES.NOT]       = "NOT",
     [Machine.OPCODES.DEC]       = "DEC",
+    [Machine.OPCODES.INC]       = "INC",
     [Machine.OPCODES.RETURN]    = "RETURN",
     [Machine.OPCODES.JMP]       = "JMP",
     [Machine.OPCODES.B]         = "B",
@@ -354,6 +356,10 @@ function Machine:step ()
     elseif op_variant == Machine.OPCODES.DEC then
         local tos_0 = self.stack_:pop()
         self.stack_:push(tos_0 - 1) 
+        self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.INC then
+        local tos_0 = self.stack_:pop()
+        self.stack_:push(tos_0 + 1) 
         self.pc_ = self.pc_ + 1
     elseif binop_fn ~= nil then
         local tos_0 = self.stack_:pop()

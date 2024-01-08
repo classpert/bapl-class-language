@@ -28,6 +28,7 @@ while w <= width
 
 n = 10;
 m = 7 * 7;
+i = 8;
 while n > 0
 {
     switch n*n
@@ -43,7 +44,7 @@ while n > 0
             @ -2;
             # fall through!
         }
-        case 64:
+        case i * i:
         {
             @ -3;
             break;
@@ -67,3 +68,8 @@ while n > 0
     n = n - 1;
 }
 
+x = {1, 2, 3, 4};
+@ x;
+
+x = {1, {2, 3}, 4, width, height};
+@ x;
