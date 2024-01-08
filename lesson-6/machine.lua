@@ -169,8 +169,9 @@ function utils.printHeader()
 end
 
 
-function utils.printArray(array)
+function utils.printArray(array, visited)
     local parts = {}
+    local visited = visited or {array}
     for i = 1,array.size do
         local e = array[i]
         if type(e) == "nil" then
@@ -178,7 +179,17 @@ function utils.printArray(array)
         elseif type(e) == "number" then
             table.insert(parts, tostring(e))
         elseif type(e) == "table" then
-            table.insert(parts, utils.printArray(e))
+            local is_loop = false
+            for _, v in ipairs(visited) do
+                is_loop = is_loop or (e == v)
+            end
+
+            if is_loop then
+                table.insert(parts, "{...}")
+            else
+                table.insert(visited, e)
+                table.insert(parts, utils.printArray(e, visited))
+            end
         else
             table.insert(parts, e)
         end
