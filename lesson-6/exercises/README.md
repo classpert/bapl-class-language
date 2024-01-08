@@ -40,9 +40,11 @@ print(a[0] == a)
 # Prints 'True'
 ```
 
-> If not, why not?
-Even with strict typing it might be possible to achieve something akin to what we see above as long as the language
-support references and union-types. E.g something like this (very contrieved example):
+> If not, why not?  
+
+Even with strict typing it might be possible to achieve something akin to what we see above as long
+as the language support references and union-types. E.g something like this (very contrieved example):
+
 *Ocaml*
 ```ocaml
 type 'a t = Object of 'a | Array of ('a t) ref array
@@ -91,6 +93,7 @@ Please see tests in `lesson-6/exercises_02.lua` for relevant tests.
 > implementation? 
 
 *Memory leaks*
+
 If we are careless and - for instance - don't null out unused values in the tables that make up our interpret/vm
 implementation we might end up with a ever growing memory footprint. Consider for instance the following example:
 
@@ -111,6 +114,7 @@ Notice that we _haven't_ told Lua that elements 2, 3 in the example above are no
 storage for these should be cleaned up (note: instead of integer the values on the stack could be large tables...).
 
 > Could we change anything to make it more "garbage-collection" friendly?
+
 For one thing we could overwrite unused items in the tables that make up our vm/interpreter with null values to tell Lua
 that we should / can free up memory on next garbage collection cycle.
 
@@ -196,10 +200,10 @@ local grammar = lpeg.P{
 ```
 
 To actually generate the code that instanciate the array I added a few new instructions `DUP`, `DEC`, `SETARRP` and
-`POP` (see `lession-6/exercises/components_06/machine.lua` for their definitions). Then I added the following function
+`POP` (see `lesson-6/exercises/components_06/machine.lua` for their definitions). Then I added the following function
 to the compiler:
 
-```
+```lua
 function Compiler:codeGenNew(ast)
     local node = ast:node()
 
