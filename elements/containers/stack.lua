@@ -22,8 +22,9 @@ function Stack:pop ()
     return e
 end
 
-function Stack:peek ()
-    return self.data_[self.n_]
+function Stack:peek (offset)
+    local offset = offset or 0
+    return self.data_[self.n_ - offset]
 end
 
 function Stack:__len ()
