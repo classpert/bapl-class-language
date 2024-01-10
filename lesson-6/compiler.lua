@@ -255,6 +255,7 @@ local opN = lpeg.C(lpeg.S"-!") * space
 local opAssign = lpeg.P"=" * space
 
 local lhs        = lpeg.V"lhs"  
+local assignment = lpeg.V"assignment"
 local primary    = lpeg.V"primary"
 local exponent   = lpeg.V"exponent"
 local negation   = lpeg.V"negation"
@@ -269,6 +270,7 @@ local block      = lpeg.V"block"
 local ifstmt     = lpeg.V"ifstmt"
 local ifrest     = lpeg.V"ifrest"
 local switchstmt = lpeg.V"switchstmt"
+local for1stmt   = lpeg.V"for1stmt"
 -- Statement grammar
 local grammar = lpeg.P{
     "program",
@@ -298,15 +300,21 @@ local grammar = lpeg.P{
                                         * ((R"case" * expression * T":" * block) / node("case_", "expression", "block"))^0
                                         * ((R"default" * T":" * block) / node("default_", "block"))^-1
                                     * T"}") / node("switch_", "expression"),
+    for1stmt    = (R"for" * ((assignment / node("assignment", "lhs", "expression"))^-1 / node("forinit")) * T";" 
+                          * ((expression)^-1 / node("fortest")) * T";" 
+                          * ((assignment / node("assignment", "lhs", "expression"))^-1 / node("forupdate"))
+                          * block) / node("for1_"),
     block       = T"{" * sequence * T";"^-1 * T"}"
                 + (R("while") * expression * block) / node("while_", "condition", "whileblock")
                 + ifstmt
-                + switchstmt,
+                + switchstmt
+                + for1stmt,
+    assignment  = lhs * opAssign * expression,
     statement   = block 
                 + (R("return") * expression) / node("return", "expression")
                 + (R("@") * expression) / node("print", "expression")
                 + (R("break")) / node("break_")
-                + (lhs * opAssign * expression)^-1 / node("assignment", "lhs", "expression"),
+                + (assignment)^-1 / node("assignment", "lhs", "expression"),
     space       = grammar_space,
 }
 grammar = grammar * -1
@@ -623,6 +631,45 @@ function Compiler:codeGenSeq(ast)
             end
         end
             
+        self:exitBreakContext()
+    elseif node.tag == "for1_" then
+        -- TODO(peter): figure out a nicer way to do this. 
+        local forinit   = ast:children()[1]:children()[1]  -- init statement of the for loop, can be "" if non provided.
+        local fortest   = ast:children()[2]:children()[1]  -- test expression, can be "" if non provided.
+        local forupdate = ast:children()[3]:children()[1]  -- update statement, can be "" if non provided.
+        local forbody   = ast:children()[4] -- the for body, always present.
+        
+        self:enterBreakContext()
+        -- Generate code for the for initialization if present.
+        if forinit ~= "" then
+            self:codeGenSeq(forinit)
+        end
+
+        -- Save the location of the test expression / beginning of loop-block if no expression given.
+        local loop_location = self:nextCodeLoc() 
+        local maybe_finish_location = nil
+        -- Generate code for the test
+        if fortest ~= "" then
+            self:codeGenExp(fortest)
+            maybe_finish_location = self:nextCodeLoc() 
+            table.insert(self.code_, 0xdeadc0de) -- sentinel to be replaced with BZ to end of body (and loop branch).
+        end
+
+        -- Generate code for the body
+        self:codeGenSeq(forbody)
+
+    
+        -- Generate code for the update if existing.
+        if forupdate ~= "" then
+            self:codeGenSeq(forupdate)
+        end
+
+        -- Jump back to test/beginning of body.
+        table.insert(self.code_, self:branchRelative(OPCODES.B, loop_location - self:nextCodeLoc()))
+        if maybe_finish_location then
+            self.code_[maybe_finish_location] =  self:branchRelative(OPCODES.BZ, self:nextCodeLoc() - maybe_finish_location)
+        end
+
         self:exitBreakContext()
     elseif node.tag == "return" then
         if node.expression ~= nil then

@@ -78,3 +78,46 @@ x[1] = x;
 @ x;
 x[2][1] = x;
 @ x;
+
+for x = 0; x < 3; x = x + 1
+{
+    @ x;
+}
+
+
+for ; x > -1; x = x - 1
+{
+    @ x;
+}
+
+for ;; x = x + 1
+{
+    @ x;
+    if x > 3
+    {
+        # escape loop
+        break;
+    }
+}
+
+for ;;
+{
+    @ x;
+    if x < -1
+    {
+        #{
+        # loop
+        #}
+        break;
+    }
+    x = x - 1;
+}
+
+for x = 0; x < 5; x = x + 1
+{
+    @ -x;
+    for y = 0; y < x; y = y + 1
+    {
+        @ y;
+    }
+}
