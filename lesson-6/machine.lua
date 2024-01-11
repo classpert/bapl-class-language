@@ -25,6 +25,7 @@ Machine.OPCODES.STORE     = 0x12 -- Pop TOS and store at memory[memory[pc + 1]].
 Machine.OPCODES.EXCH      = 0x13 -- Pop 2 elements TOS(0), TOS(1) and pushes TOS(0) and then TOS(1)
 Machine.OPCODES.POP       = 0x14 -- Pop 1 element TOS(0) from the stack.
 Machine.OPCODES.DUP       = 0x15 -- Push a copy of TOS(0) onto the stack.
+Machine.OPCODES.SWAP      = 0x16 -- TOS(0) <--> TOS(offset), where offset is encoded in the lower 32 bits.
 Machine.OPCODES.ADD       = 0x20 -- Pop 2 elements TOS(0), TOS(1) and push the sum to TOS(0).
 Machine.OPCODES.SUB       = 0x21 -- Pop 2 elements TOS(0), TOS(1) and push the difference TOS(1) - TOS(0) to TOS(0)
 Machine.OPCODES.MULT      = 0x22 -- Pop 2 elements TOS(0), TOS(1) and push the product to TOS(0)
@@ -56,6 +57,8 @@ Machine.OPCODES.NEWARR    = 0xB0 -- Pop 1 element TOS(0), create array storage o
 Machine.OPCODES.GETARR    = 0xB1 -- Pop 2 elements TOS(0), TOS(1) from the stack and push the contents of array (TOS(1)) at index (TOS(0)) 
 Machine.OPCODES.SETARR    = 0xB2 -- Pop 3 elements TOS(0), TOS(1), TOS(2) from the stack, set array (TOS(2)) at index (TOS(1)) to TOS(0).
 Machine.OPCODES.SETARRP   = 0xB3 -- Pop 1 element TOS(0) from the stack, set array (TOS(2)) at index (TOS(1)) to TOS(0).
+Machine.OPCODES.GETARRP   = 0xB4 -- Push 1 element contents of array TOS(1) at index TOS(0) on top of stack.
+Machine.OPCODES.SIZEARR   = 0xB5 -- Push 1 element sizeof(TOS(0)), assuming TOS(0) is an array.
 Machine.OPCODES.HALT      = 0xF0 -- Halt the machine,
 Machine.OPCODES.PRINT     = 0xF1 -- Pop TOS and Print TOS via io channel.
 function toBool (a)
@@ -91,6 +94,7 @@ Machine.OPCODES.NAME_LOOKUP = {
     [Machine.OPCODES.EXCH]      = "EXCH",
     [Machine.OPCODES.POP]       = "POP",
     [Machine.OPCODES.DUP]       = "DUP",
+    [Machine.OPCODES.SWAP]      = "SWAP",
     [Machine.OPCODES.ADD]       = "ADD",
     [Machine.OPCODES.SUB]       = "SUB",
     [Machine.OPCODES.MULT]      = "MULT",
@@ -118,6 +122,8 @@ Machine.OPCODES.NAME_LOOKUP = {
     [Machine.OPCODES.GETARR]    = "GETARR",
     [Machine.OPCODES.SETARR]    = "SETARR",
     [Machine.OPCODES.SETARRP]   = "SETARRP",
+    [Machine.OPCODES.GETARRP]   = "GETARRP",
+    [Machine.OPCODES.SIZEARR]   = "SIZEARR",
     [Machine.OPCODES.HALT]      = "HALT",
     [Machine.OPCODES.PRINT]     = "PRINT",
 }
@@ -319,6 +325,10 @@ function Machine:step ()
         local tos_0 = self.stack_:peek()
         self.stack_:push(tos_0)
         self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.SWAP then
+        operand = (op & 0xffffffff)
+        self.stack_:swap(operand)
+        self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.NEWARR then
         local tos_0 = self.stack_:pop()
         self.stack_:push({size = tos_0})
@@ -341,6 +351,14 @@ function Machine:step ()
         tos_2[tos_1] = tos_0
 
         self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.GETARRP then
+        local tos_0 = self.stack_:peek()  -- index
+        local tos_1 = self.stack_:peek(1) -- array
+        assert(type(tos_1) == "table", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
+        assert(1 <= tos_0 and tos_0 <= tos_1.size, make_error(ERROR_CODES.INDEX_OUT_OF_RANGE, {message = "Index out of range"}))
+
+        self.stack_:push(tos_1[tos_0])
+        self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.SETARRP then
         local tos_0 = self.stack_:pop()  -- value
         local tos_1 = self.stack_:peek() -- index
@@ -349,6 +367,12 @@ function Machine:step ()
         assert(1 <= tos_1 and tos_1 <= tos_2.size, make_error(ERROR_CODES.INDEX_OUT_OF_RANGE, {message = "Index out of range"}))
 
         tos_2[tos_1] = tos_0
+
+        self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.SIZEARR then
+        local tos_0 = self.stack_:peek()  -- array
+        assert(type(tos_0) == "table", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
+        self.stack_:push(tos_0.size)
 
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.PRINT then

@@ -218,6 +218,7 @@ local reserved = {
     ["or"]     = true,
     ["switch"] = true,
     ["case"]   = true,
+    ["in"]     = true,
 }
 
 local function R(t)
@@ -271,6 +272,7 @@ local ifstmt     = lpeg.V"ifstmt"
 local ifrest     = lpeg.V"ifrest"
 local switchstmt = lpeg.V"switchstmt"
 local for1stmt   = lpeg.V"for1stmt"
+local for2stmt   = lpeg.V"for2stmt"
 -- Statement grammar
 local grammar = lpeg.P{
     "program",
@@ -304,11 +306,13 @@ local grammar = lpeg.P{
                           * ((expression)^-1 / node("fortest")) * T";" 
                           * ((assignment / node("assignment", "lhs", "expression"))^-1 / node("forupdate"))
                           * block) / node("for1_"),
+    for2stmt    = (R"for" * variable * R"in" * expression * block) / node("for2_"),
     block       = T"{" * sequence * T";"^-1 * T"}"
                 + (R("while") * expression * block) / node("while_", "condition", "whileblock")
                 + ifstmt
                 + switchstmt
-                + for1stmt,
+                + for1stmt
+                + for2stmt,
     assignment  = lhs * opAssign * expression,
     statement   = block 
                 + (R("return") * expression) / node("return", "expression")
@@ -671,6 +675,64 @@ function Compiler:codeGenSeq(ast)
         end
 
         self:exitBreakContext()
+    elseif node.tag == "for2_" then
+        local variable = ast:children()[1]
+        local tablexpr = ast:children()[2]
+        local body     = ast:children()[3]
+
+
+        -- TODO(peter): Here local (to a block / function  / scope) variables really make sense. For now we let the loop
+        -- variable live in the global space.
+        table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+        table.insert(self.code_, 0)
+        table.insert(self.code_, OPCODES.make(OPCODES.STORE))
+        -- Insert a sentinel value. We will update this with an pointer to the storage 
+        -- of the variable during the program generation phase.
+        table.insert(self.code_, 0xdeadc0de)
+        self:envAddRef(variable:node().identifier, #self.code_)
+
+        self:enterBreakContext()
+
+        -- Table loop variable on stack.
+        table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+        table.insert(self.code_, 1)
+
+        -- Generate code for table expression.
+        self:codeGenExp(tablexpr)
+
+
+        local loop_location = self:nextCodeLoc()
+        -- Generate end-of-loop test.
+        table.insert(self.code_, OPCODES.make(OPCODES.SIZEARR))
+        table.insert(self.code_, OPCODES.make(OPCODES.INC))
+        table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 2)) 
+        table.insert(self.code_, OPCODES.make(OPCODES.DUP)) 
+        table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 3)) 
+        table.insert(self.code_, OPCODES.make(OPCODES.GE))
+        local eol_branch = self:nextCodeLoc()
+        table.insert(self.code_, 0xdeadc0de) -- branch to end of block
+        table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 1)) 
+
+        -- Get array element at index and store loop variable.
+        table.insert(self.code_, OPCODES.make(OPCODES.GETARRP))
+        table.insert(self.code_, OPCODES.make(OPCODES.STORE))
+        table.insert(self.code_, 0xdeadc0de)
+        self:envAddRef(variable:node().identifier, #self.code_)
+
+        -- Generate for-body.
+        self:codeGenSeq(body)
+        table.insert(self.code_, OPCODES.make(OPCODES.INC))
+        table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 1)) 
+        table.insert(self.code_, self:branchRelative(OPCODES.B, loop_location - self:nextCodeLoc()))
+        self.code_[eol_branch] =  self:branchRelative(OPCODES.BNZ, self:nextCodeLoc() - eol_branch)
+
+        self:exitBreakContext()
+       
+
+        -- Restore stack.
+        table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop table
+        table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop loop index
+
     elseif node.tag == "return" then
         if node.expression ~= nil then
             self:codeGenExp(node.expression)

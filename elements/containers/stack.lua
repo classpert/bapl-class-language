@@ -27,6 +27,13 @@ function Stack:peek (offset)
     return self.data_[self.n_ - offset]
 end
 
+function Stack:swap (offset)
+    assert(self.n_ > offset and offset >= 0)
+    local temp = self.data_[self.n_ - offset]
+    self.data_[self.n_ - offset] = self.data_[self.n_]
+    self.data_[self.n_] = temp
+end
+
 function Stack:__len ()
     return self.n_
 end
