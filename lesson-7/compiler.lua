@@ -295,10 +295,10 @@ local grammar = lpeg.P{
     expression  = lpeg.Cf(logical * lpeg.Cg(T("or") * logical)^0,processLogical("or")),       
     lhs         = lpeg.Ct(variable * (T"[" * expression * T"]")^0) / processIndex
                 + variable,
-    params      = (T"(" * T")" 
-                + T"(" * identifier * (T"," * identifier)^0 * T")") / node("params"), 
-    args        = (T"(" * T")" 
-                + T"(" * expression * (T"," * expression)^0 * T")") / node("params"), 
+    params      = T"(" * T")" / node("params", "_")
+                + (T"(" * identifier * (T"," * identifier)^0 * T")") / node("params"), 
+    args        = T"(" * T")" / node("params", "_")
+                + (T"(" * expression * (T"," * expression)^0 * T")") / node("params"), 
     sequence    = block * (sequence)^-1 / node("sequence")
                 + statement * (T";" * sequence)^-1 / node("sequence"),
     ifstmt      = (R("if") * expression * block * (ifrest + R("else") * block)^-1) 
@@ -806,28 +806,29 @@ function Compiler:codeGenLambda(ast)
     local node       = ast:node()
     local params     = node.params:children()
     local block      = node.block
-
-
     -- Step 1: Generate code for closure.
     local env        = self.env_
-    local env_lambda = Tree:new({parent = self.env_, vars = {}, freelist = {}})
+    local env_lambda = Tree:new({parent = nil, vars = {}, freelist = {}})
     self.env_        = env_lambda
 
     local code        = self.code_
     local code_lambda = {}
     self.code_        = code_lambda
-   
+  
+    local break_ctx   = self.break_ctx_
+    self.break_ctx_   = Stack:new()
+
     --- store params from signature (pushed to stack) into closure local storage.
     for _, param in pairs(params) do
         table.insert(self.code_, OPCODES.make(OPCODES.STORE))
         table.insert(self.code_, 0xdeadc0de)
-        self:envAddRef(param:node().identifier, #self.code_) -- Add a reference to identifier location
+        self:envAddRef(param, #self.code_) -- Add a reference to identifier location
     end
 
     -- generate the code for the lambda block
     self:codeGenBlock(block)
 
-    -- insert return instruction.
+    -- insert return instruction in case it does not exist in block.
     table.insert(self.code_, OPCODES.make(OPCODES.RETURN))
 
     local closure = self:genProgramImage()
@@ -835,7 +836,7 @@ function Compiler:codeGenLambda(ast)
     -- Step 2: generate code for creating side.
     -- restore state to current closure.
     self.env_ = env
-    self.code = code
+    self.code_ = code
     
     -- Push the partially formed closure or closure prototype onto the stack.
     table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
@@ -849,13 +850,14 @@ function Compiler:codeGenLambda(ast)
     -- for the indices that contain free variables.
     for id, loc in self:freevariables(env_lambda) do
         table.insert(self.code_, OPCODES.make(OPCODES.DUP))
-        table.insert(self.code_, location)
+        table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+        table.insert(self.code_, loc)
         table.insert(self.code_, OPCODES.make(OPCODES.LOAD))
         table.insert(self.code_, 0xdeadc0de)
         self:envAddRef(id, #self.code_) -- Add a reference to identifier in the current closure.
         table.insert(self.code_, OPCODES.make(OPCODES.SETARR))
     end
-    table.insert(self.code_, OPCODES.make(OPCODES.SETARR))
+    table.insert(self.code_, OPCODES.make(OPCODES.CLOSURE))
 end
 
 
@@ -888,8 +890,8 @@ function Compiler:freevariables(env)
             coroutine.yield (id, vars[id].data_loc) 
         end
 
-        for _, c in env:children() do
-            self:freevariables(c)
+        for _, c in ipairs(env:children()) do
+            aux(c)
         end
     end
 

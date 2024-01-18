@@ -213,12 +213,13 @@ end
 function Machine:new (ios)
     local ios = ios or io.stdout
     local machine = { 
-        pc_    = 1, 
-        code_  = {Machine.OPCODES.HALT}, 
-        data_  = {},
-        stack_ = Stack:new(), 
-        trace_ = false,
-        io_ = ios,
+        pc_    = 1,                       -- Program counter
+        code_  = {Machine.OPCODES.HALT},  -- Code segment
+        data_  = {},                      -- Data segment
+        stack_ = Stack:new(),             -- Data stack
+        call_  = Stack:new(),             -- Call stack
+        trace_ = false,                   -- trace flag
+        io_ = ios,                        -- io channels
     }
     setmetatable(machine, Machine)
     return machine
@@ -245,6 +246,12 @@ function Machine:load (image)
     self.data_   = image.data
     self.pc_     = 1
     self.stack_  = Stack:new()
+    self.call_   = Stack:new()
+
+
+    -- At the top level make sure the call stack has the return to
+    -- HALT program...
+    self.call_:push({code = {Machine.OPCODES.make(Machine.OPCODES.HALT)}, data = {}, pc = 1})
 end
 
 -- Step the machine 1 instruction. I.e
@@ -266,8 +273,6 @@ function Machine:step ()
 
     if op_variant == Machine.OPCODES.HALT then
         -- Do nothing!
-    elseif op_variant == Machine.OPCODES.RETURN then
-        -- For now do nothing.
     elseif op_variant == Machine.OPCODES.JMP then
         operand = self.code_[self.pc_ + 1]
         self.pc_ = operand
@@ -387,28 +392,26 @@ function Machine:step ()
         local tos_0 = self.stack_:pop() -- array
         local tos_1 = self.stack_:pop() -- closure to be filled.
         assert(type(tos_1) == "table" and tos_1.tag == "closure", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected closure"}))
-        self.stack_:push({tag = "closure", code = code, data = data})
+        self.stack_:push({tag = "closure", code = tos_1.code, data = tos_0})
 
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.CALL then
         local tos_0 = self.stack_:pop() -- the closure.
-        assert(type(tos_1) == "table" and tos_1.tag == "closure", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected closure"}))
+        assert(type(tos_0) == "table" and tos_0.tag == "closure", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected closure"}))
         
         -- save current context
-        local code = self.code_
-        local data = self.data_
-        local pc   = self.pc_
+        self.call_:push({code = self.code_, data = self.data_, pc = self.pc_ + 1})
     
+
         self.code_ = tos_0.code
-        self.data  = tos_0.data_
-        self.pc_   = 0
-
-        self:run()
-
-        -- restore current context
-        self.code_ = code
-        self.data_ = data
-        self.pc_   = pc + 1 
+        self.data_ = tos_0.data
+        self.pc_   = 1
+    elseif op_variant == Machine.OPCODES.RETURN then
+        -- restore previous context
+        local call_info = self.call_:pop()
+        self.code_ = call_info.code
+        self.data_ = call_info.data
+        self.pc_   = call_info.pc
     elseif op_variant == Machine.OPCODES.PRINT then
         local tos_0 = self.stack_:pop()
         local out   = ""
@@ -455,8 +458,6 @@ function Machine:isHalted ()
     if self.pc_ > #self.code_ then
         return true
     elseif op_variant == Machine.OPCODES.HALT then
-        return true
-    elseif op_variant == Machine.OPCODES.RETURN then
         return true
     else
         return false

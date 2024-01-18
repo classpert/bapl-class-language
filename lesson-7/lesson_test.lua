@@ -13,7 +13,7 @@ TestMachine = {}
             io.stdout:write(... .. "\n")
             table.insert(self.prints, ...)
         end
-     
+
         local machine = Machine:new(TestIO)
         machine:setTrace(true) -- print trace of execution to stdout
         local function eval(str)
@@ -28,11 +28,10 @@ TestMachine = {}
             TestIO.prints = {}
             machine:load(program)
             machine:run()
-            return TestIO.prints 
+            return TestIO.prints
         end
         local status = true
-        local data = {}
-
+        local payload = {}
         -- Regression
         lu.assertEquals(eval("x = 2.3; y = 4.3 + -2.0^(2 - 3.3); z = x^2 + y^2; return z; z = 20"), 2.3^2 + (4.3 + -2.0^(2 - 3.3))^2)
         lu.assertEquals(eval_print("z = 10; @ z; @ z^2"), {"10\n", "100.0\n"})
@@ -184,6 +183,19 @@ TestMachine = {}
         -- Block scoping.
         lu.assertEquals(eval("x = 10; { y = 15; x = x + y; } return x;"), 25)
         lu.assertEquals(eval("x = 10; { y = 15; x = x + y; } return y;"), 0)
+
+
+        -- Functions
+        lu.assertEquals(eval("f = lambda () { return 10; }; return f();"), 10)
+        lu.assertEquals(eval("y = 2; x = 100; @ x; f = lambda () { return x; }; return y + f();"), 102)
+        lu.assertEquals(eval("y = 2; f = lambda (x) { return x + y; }; @ f (10); return f(11);"), 13)
+        lu.assertEquals(eval("y = 2; f = lambda (x) { return x + y; }; y = 6; @ f (10); return f(11);"), 13)
+
+
+        test_file = io.open("lesson-7/test.xpl", "r"):read("a")
+        status, data = pcall(eval, test_file)
+        lu.assertEquals(status, true)
     end
+
 os.exit(lu.LuaUnit:run())
 
