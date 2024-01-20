@@ -152,7 +152,7 @@ TestMachine = {}
         lu.assertEquals(eval("x = 10; y = 9; return x < y or y != 9;"), 0)
 
         -- Array operations.
-        lu.assertEquals(eval("x = new [10]; return x;"), {size=10}) 
+        lu.assertEquals(eval("x = new [10]; return x;"), {size=10, tag = "array", id = 0}) 
         lu.assertEquals(eval("x = new [10]; x[1] = 10; x[2] = -10; return x[1];"), 10) 
         lu.assertEquals(eval("x = new [2 * 2 + 1]; i = 1; x[2*i + 2] = -10; return x[4];"), -10) 
         lu.assertEquals(eval("x = new[2]; x[1] = 3; x[2] = 4; y = x[1]^2 + x[2]^2; return y;"), 25) 

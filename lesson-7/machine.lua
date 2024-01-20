@@ -152,6 +152,10 @@ function utils.printStep(pc, op, operand, tos, stacksize)
         tos_string = string.format("%9.2f", tos)
     elseif type(tos) == "nil" then
         tos_string = string.format("%9s", " ")
+    elseif type(tos) == "table" and tos.tag == "array" then
+        tos_string = string.format("A:%08x", tos.id)
+    elseif type(tos) == "table" and tos.tag == "closure" then
+        tos_string = string.format("C:%08x", tos.id)
     else
         tos_string = tostring(tos)
     end
@@ -222,13 +226,14 @@ end
 function Machine:new (ios)
     local ios = ios or io.stdout
     local machine = { 
-        pc_    = 1,                       -- Program counter
-        code_  = {Machine.OPCODES.HALT},  -- Code segment
-        data_  = {},                      -- Data segment
-        stack_ = Stack:new(),             -- Data stack
-        call_  = Stack:new(),             -- Call stack
-        trace_ = false,                   -- trace flag
-        io_ = ios,                        -- io channels
+        pc_     = 1,                       -- Program counter
+        code_   = {Machine.OPCODES.HALT},  -- Code segment
+        data_   = {},                      -- Data segment
+        stack_  = Stack:new(),             -- Data stack
+        call_   = Stack:new(),             -- Call stack
+        trace_  = false,                   -- trace flag
+        obj_id_ = 0,                       -- the id of objects created
+        io_     = ios,                     -- io channels
     }
     setmetatable(machine, Machine)
     return machine
@@ -353,12 +358,13 @@ function Machine:step ()
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.NEWARR then
         local tos_0 = self.stack_:pop()
-        self.stack_:push({size = tos_0})
+        self.stack_:push({size = tos_0, tag = "array", id = self.obj_id_})
+        self.obj_id_ = self.obj_id_ + 1
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.GETARR then
         local tos_0 = self.stack_:pop() -- index
         local tos_1 = self.stack_:pop() -- array
-        assert(type(tos_1) == "table", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
+        assert(type(tos_1) == "table" and tos_1.tag == "array", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
         assert(1 <= tos_0 and tos_0 <= tos_1.size, make_error(ERROR_CODES.INDEX_OUT_OF_RANGE, {message = "Index out of range"}))
 
         self.stack_:push(tos_1[tos_0])
@@ -367,7 +373,7 @@ function Machine:step ()
         local tos_0 = self.stack_:pop() -- value
         local tos_1 = self.stack_:pop() -- index
         local tos_2 = self.stack_:pop() -- array
-        assert(type(tos_2) == "table", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
+        assert(type(tos_2) == "table" and tos_2.tag == "array", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
         assert(1 <= tos_1 and tos_1 <= tos_2.size, make_error(ERROR_CODES.INDEX_OUT_OF_RANGE, {message = "Index out of range"}))
 
         tos_2[tos_1] = tos_0
@@ -376,7 +382,7 @@ function Machine:step ()
     elseif op_variant == Machine.OPCODES.GETARRP then
         local tos_0 = self.stack_:peek()  -- index
         local tos_1 = self.stack_:peek(1) -- array
-        assert(type(tos_1) == "table", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
+        assert(type(tos_1) == "table" and tos_1.tag == "array", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
         assert(1 <= tos_0 and tos_0 <= tos_1.size, make_error(ERROR_CODES.INDEX_OUT_OF_RANGE, {message = "Index out of range"}))
 
         self.stack_:push(tos_1[tos_0])
@@ -385,7 +391,7 @@ function Machine:step ()
         local tos_0 = self.stack_:pop()  -- value
         local tos_1 = self.stack_:peek() -- index
         local tos_2 = self.stack_:peek(1) -- array
-        assert(type(tos_2) == "table", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
+        assert(type(tos_2) == "table" and tos_2.tag == "array", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
         assert(1 <= tos_1 and tos_1 <= tos_2.size, make_error(ERROR_CODES.INDEX_OUT_OF_RANGE, {message = "Index out of range"}))
 
         tos_2[tos_1] = tos_0
@@ -393,7 +399,7 @@ function Machine:step ()
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.SIZEARR then
         local tos_0 = self.stack_:peek()  -- array
-        assert(type(tos_0) == "table", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
+        assert(type(tos_0) == "table" and tos_0.tag == "array", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected array"}))
         self.stack_:push(tos_0.size)
 
         self.pc_ = self.pc_ + 1
@@ -401,7 +407,8 @@ function Machine:step ()
         local tos_0 = self.stack_:pop() -- array
         local tos_1 = self.stack_:pop() -- closure to be filled.
         assert(type(tos_1) == "table" and tos_1.tag == "closure", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected closure"}))
-        self.stack_:push({tag = "closure", code = tos_1.code, data = tos_0, arity = tos_1.arity})
+        self.stack_:push({tag = "closure", code = tos_1.code, data = tos_0, arity = tos_1.arity, id = self.obj_id_})
+        self.obj_id_ = self.obj_id_ + 1
 
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.CALL then
@@ -427,8 +434,10 @@ function Machine:step ()
         local out   = ""
         if type(tos_0) == "number" then
             out = tostring(tos_0)
-        elseif type(tos_0) == "table" then
+        elseif type(tos_0) == "table" and type(tos_0.tag == "array") then
             out = utils.printArray(tos_0)
+        elseif type(tos_0) == "closure" then
+            out = string.format("closure (%08x), arity: %d", tos_0.id, tos_0.arity)
         else
             out = tos_0
         end
@@ -437,19 +446,24 @@ function Machine:step ()
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.DEC then
         local tos_0 = self.stack_:pop()
+        assert(type(tos_0) == "number", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected number"}))
         self.stack_:push(tos_0 - 1) 
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.INC then
         local tos_0 = self.stack_:pop()
+        assert(type(tos_0) == "number", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected number"}))
         self.stack_:push(tos_0 + 1) 
         self.pc_ = self.pc_ + 1
     elseif binop_fn ~= nil then
         local tos_0 = self.stack_:pop()
         local tos_1 = self.stack_:pop()
+        assert(type(tos_1) == "number", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected number"}))
+        assert(type(tos_1) == "number", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected number"}))
         self.stack_:push(binop_fn(tos_1, tos_0))
         self.pc_ = self.pc_ + 1
     elseif unaryop_fn ~= nil then
         local tos_0 = self.stack_:pop()
+        assert(type(tos_0) == "number", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected number"}))
         self.stack_:push(unaryop_fn(tos_0))
         self.pc_ = self.pc_ + 1
     else

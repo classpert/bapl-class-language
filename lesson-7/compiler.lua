@@ -1096,7 +1096,7 @@ function Compiler:genProgramImage(data)
     data = data or {}
     self:genData(self.env_, data)
 
-    return { tag = "closure", code = self.code_, data = data, arity = 0}
+    return { tag = "closure", code = self.code_, data = data, arity = 0, id = -1}
 end
 
 function Compiler:syntaxErrorPayload(input, pos)
