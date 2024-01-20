@@ -3,8 +3,18 @@
 --
 
 local lpeg = require "lpeg"
-local pt = (require "inspect").inspect
+local inspect = require "inspect"
 local errors = require "errors"
+
+
+local function remove_all_metatables(item, path)
+    if path[#path] ~= inspect.METATABLE then return item end
+end
+
+local function pt(t)
+    return inspect.inspect(t, {process = remove_all_metatables})
+end
+
 
 require "elements/containers/tree"
 require "elements/containers/stack"
@@ -202,23 +212,24 @@ local alpha = lpeg.R("AZ", "az")
 local alphanum = alpha + digit
 
 local reserved = { 
-    ["@"]      = true, 
-    ["if"]     = true, 
-    ["then"]   = true, 
-    ["else"]   = true,
-    ["elseif"] = true,
-    ["while"]  = true, 
-    ["for"]    = true, 
-    ["do"]     = true, 
-    ["end"]    = true, 
-    ["break"]  = true, 
-    ["lambda"] = true,
-    ["return"] = true,
-    ["and"]    = true,
-    ["or"]     = true,
-    ["switch"] = true,
-    ["case"]   = true,
-    ["in"]     = true,
+    ["@"]        = true, 
+    ["if"]       = true, 
+    ["then"]     = true, 
+    ["else"]     = true,
+    ["elseif"]   = true,
+    ["while"]    = true, 
+    ["for"]      = true, 
+    ["do"]       = true, 
+    ["end"]      = true, 
+    ["break"]    = true, 
+    ["lambda"]   = true,
+    ["function"] = true,
+    ["return"]   = true,
+    ["and"]      = true,
+    ["or"]       = true,
+    ["switch"]   = true,
+    ["case"]     = true,
+    ["in"]       = true,
 }
 
 local function R(t)
@@ -279,7 +290,7 @@ local args       = lpeg.V"args"
 local grammar = lpeg.P{
     "program",
     program     = space * sequence,
-    primary     = (lhs * args) / node("call", "lambdaexpr", "params")
+    primary     = ((lhs + T"(" * expression * T")") * args) / node("call", "lambdaexpr", "params")
                 + (R"lambda" * params * block) / node("lambda", "params", "block")
                 + lpeg.Ct(R"new" * (T"[" * expression * T"]")^1) /  processNew
                 + lpeg.Ct(T"{" * expression * (T"," * expression)^0 * T"}") / node("newconstr", "elements")
@@ -317,6 +328,7 @@ local grammar = lpeg.P{
     for2stmt    = (R"for" * variable * R"in" * expression * block) / node("for2_"),
     block       = T"{" * sequence * T";"^-1 * T"}" / node("block")
                 + (R("while") * expression * block) / node("while_", "condition", "whileblock")
+                + (R("function") * identifier * params * block) / node("function_", "identifier", "params", "block")
                 + ifstmt
                 + switchstmt
                 + for1stmt
@@ -324,6 +336,7 @@ local grammar = lpeg.P{
     assignment  = lhs * opAssign * expression,
     statement   = block 
                 + (R("return") * expression) / node("return", "expression")
+                + (R(":") * expression) / node("expr_as_statement", "expression") -- for side effects stack will be poped!
                 + (R("@") * expression) / node("print", "expression")
                 + (R("break")) / node("break_")
                 + (assignment)^-1 / node("assignment", "lhs", "expression"),
@@ -344,7 +357,8 @@ function Compiler:new ()
     local compiler = {
         env_ = Tree:new({parent = nil, vars = {}, freevars = {}, localvars = {}}), 
         code_ = {}, 
-        break_ctx_ = Stack:new()
+        break_ctx_ = Stack:new(),
+        functions_ = {}
     }
     setmetatable(compiler, Compiler)
     return compiler
@@ -800,6 +814,9 @@ function Compiler:codeGenSeq(ast)
     elseif node.tag == "return" then
         if node.expression ~= nil then
             self:codeGenExp(node.expression)
+        else
+            table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+            table.insert(self.code_, 0)
         end
         table.insert(self.code_, OPCODES.make(OPCODES.RETURN))
     elseif node.tag == "print" then
@@ -807,6 +824,11 @@ function Compiler:codeGenSeq(ast)
             self:codeGenExp(node.expression)
         end
         table.insert(self.code_, OPCODES.make(OPCODES.PRINT))
+    elseif node.tag == "function_" then
+        self:codeGenFunction(ast)
+    elseif node.tag == "expr_as_statement" then
+        self:codeGenExp(node.expression)
+        table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop value
     else
         error(make_error(ERROR_CODES.UNEXPECTED_TAG, {tag = node.tag}))
     end
@@ -832,6 +854,134 @@ function Compiler:codeGenCall(ast)
     table.insert(self.code_, OPCODES.make(OPCODES.CALL))
 end
 
+
+function Compiler:rewriteFunc(ast, identifier, lhs_node)
+    local node     = ast:node()
+    local new_node = {}
+    if node.tag == "assignment" and node.expression == nil then
+        new_node = node
+    elseif node.tag == "assignment" and node.lhs:node().tag == "variable" and node.lhs:node().identifier == identifier then
+        new_node = {
+            tag = "assignment",
+            lhs = Tree:new({
+                tag = "variable",
+                identifier = lhs_node.array:node().identifier
+            }),
+            expression = node.expression
+        }
+    elseif node.tag == "variable" and node.identifier == identifier then
+        new_node = lhs_node
+    elseif node.tag == "function" and node.identifier == identifier then
+        new_node = ast -- we don't recurse further into functions it will be handled recursively.
+    else
+        for k, v in pairs(node) do
+            local new_v = v
+            if type(v) == "table" and v.__type == "Tree" then
+                new_v = self:rewriteFunc(v, identifier, lhs_node)
+            end
+            new_node[k] = new_v
+        end
+    end
+    
+
+    local new_children = {}
+    for _, c in ipairs(ast:children()) do
+        table.insert(new_children, self:rewriteFunc(c, identifier, lhs_node))
+    end
+
+    return Tree:new(new_node, table.unpack(new_children))
+end
+
+-- A func is just syntactic sugar around a lambda expression. We will start by transforming the current node into
+-- a sequence and then generate code for that new sequence. The general idea is as follows.
+--
+-- 1. Create a "hidden" identifier (hidden in the sense that it cannot be generated by a user) derived from the function
+--    identifier. "<function-name>" -> ".<funtion-name>". Note that this identifier is forbidden by the parser so it's
+--    safe for us to use it.
+--
+-- 2. Create a new Sequence-node that contains creation of a 1 cell array this will hold a reference to our
+--    lambda-closure: .<function-name> = {0}.
+--
+-- 3. Replace all variables with identifier  of <function-name> in the block with lhs .<function-name>[1].
+--
+-- 4. Create a new closure and assign it to the .<function-name>[1] cell. The close takes the modified block and params
+--    as payload.
+--
+-- 5. Create a variable with identifier <function-name> and assign .<function-name>[1] to this variable.
+--
+function Compiler:codeGenFunction(ast)
+    local node       = ast:node()
+    local identifier = node.identifier
+    local params     = node.params
+
+    local defined    = self.functions_[identifier]
+    local functions  = self.functions_
+    self.functions_  = {}
+
+    local lhs = Tree:new({
+        tag   = "indexed",
+        array = Tree:new({
+            tag = "variable",
+            identifier = "." .. identifier
+        }),
+        index = Tree:new({
+            tag = "number",
+            value = 1,
+        }),
+    })
+
+
+    local block = node.block or Tree:new({tag = "block"}, Tree:new({tag = "return"}))
+    local block = self:rewriteFunc(block, identifier, lhs:node())
+
+    local array_assgn = Tree:new({
+        tag = "assignment",
+        lhs = Tree:new({
+            tag = "variable",
+            identifier = "." .. identifier
+        }),
+        expression = Tree:new({
+            tag = "new",
+            size = Tree:new({
+                tag = "number",
+                value = 1,
+            }),
+        })
+    })
+
+    local func_assgn = Tree:new({
+        tag = "assignment",
+        lhs = lhs, 
+        expression = Tree:new({
+            tag = "lambda",
+            params = params,
+            block  = block 
+        })
+    })
+
+
+    local ident_assgn = Tree:new({
+        tag = "assignment",
+        lhs = Tree:new({
+            tag = "variable",
+            identifier = identifier
+        }),
+        expression = lhs
+    })
+
+    if not defined then
+        self:codeGenSeq(array_assgn)
+        print("DEBUG: not defined for ", identifier)
+    else
+        print("DEBUG: already defined for ", identifier)
+    end
+    self:codeGenSeq(func_assgn)
+    self:codeGenSeq(ident_assgn)
+
+    self.functions_ = functions
+    self.functions_[identifier] = true
+end
+
 function Compiler:codeGenLambda(ast)
     local node       = ast:node()
     local params     = node.params:children()
@@ -845,8 +995,8 @@ function Compiler:codeGenLambda(ast)
     local code_lambda = {}
     self.code_        = code_lambda
   
-    local break_ctx   = self.break_ctx_
-    self.break_ctx_   = Stack:new()
+    local break_ctx  = self.break_ctx_
+    self.break_ctx_  = Stack:new()
 
     --- store params from signature (pushed to stack) into closure local storage.
     for _, param in pairs(params) do
@@ -857,15 +1007,17 @@ function Compiler:codeGenLambda(ast)
     self:codeGenBlock(block)
 
     -- insert return instruction in case it does not exist in block.
+    table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+    table.insert(self.code_, 0)
     table.insert(self.code_, OPCODES.make(OPCODES.RETURN))
 
     local closure = self:genProgramImage()
     closure.arity = #params
     -- Step 2: generate code for creating side.
     -- restore state to current closure.
-    self.env_ = env
-    self.code_ = code
-   
+    self.env_      = env
+    self.code_     = code
+    self.break_ctx_ = break_ctx
     
 
     -- Push the partially formed closure or closure prototype onto the stack.

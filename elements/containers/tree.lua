@@ -1,5 +1,6 @@
 Tree = {}
 Tree.__index = Tree
+Tree.__type  = "Tree"
 -- Constructs a tree.
 --
 -- Note: A leaf node is constructed by calling Tree:new (node).

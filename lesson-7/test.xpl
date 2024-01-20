@@ -171,56 +171,31 @@ c1 = counter (20);
 
 @ c1();
 
-flup = {0};
-fac = {0};
-fac[1] = lambda (x)
-{
-    @ x;
-    if x <= 1
-    {
-        return 1;
-    }
-    else
-    {
-        return fac[1](x - 1) * x;
-    }
-};
-
-
-@ fac[1](5);
 
 test = lambda () { return 100; };
 
 @ test() * 3;
 
-#{
-even_ref = &even;
+x = (lambda (x) { @ x; return x;})(10);
 
-odd = lambda (n)
+f = lambda () { @ 10; };
+
+: f();
+
+fac = 0;
+function fac(n)
 {
-    if n == 0
-    {
-        return 0;
-    }
-    else
-    {
-        return *even_ref(n - 1);
-    }
-};
-
-odd_ref = &odd;
-
-even = lambda (n)
-{
-    if n == 0
+    if (n < 1)
     {
         return 1;
     }
     else
     {
-        return *odd_ref(n - 1);
+        return fac(n - 1) * n;
     }
-};
+}
 
-@ even(10);
-#}
+@ (lambda (x) { @ 33344; })(20);
+
+@ fac(5);
+
