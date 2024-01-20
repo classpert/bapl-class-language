@@ -269,3 +269,28 @@ function fac_acc(n, acc)
 
 @ fac_acc(6, 1);
 
+function range(start, stop, step)
+{
+    current = start;
+    return lambda ()
+    {
+        if (current < stop)
+        {
+            temp = current;
+            current = current + step;
+            return temp;
+        }
+        else
+        {
+            return null;
+        }
+    };
+}
+
+r = range(-5, 0, 1.5);
+
+@ r();
+@ r();
+@ r();
+@ r();
+@ r();

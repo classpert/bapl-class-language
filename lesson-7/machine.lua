@@ -156,6 +156,8 @@ function utils.printStep(pc, op, operand, tos, stacksize)
         tos_string = string.format("A:%08x", tos.id)
     elseif type(tos) == "table" and tos.tag == "closure" then
         tos_string = string.format("C:%08x", tos.id)
+    elseif type(tos) == "table" and tos.tag == "null" then
+        tos_string = string.format("%9s", "null")
     else
         tos_string = tostring(tos)
     end
@@ -169,6 +171,8 @@ function utils.printStep(pc, op, operand, tos, stacksize)
     local operand_string = ""
     if operand and operand_is_address[op] then
         operand_string = string.format("%08x", operand)
+    elseif type(operand) == "table" and operand.tag == "null" then
+        operand_string = "null"
     elseif operand then
         operand_string = tostring(operand)
     end
@@ -434,10 +438,12 @@ function Machine:step ()
         local out   = ""
         if type(tos_0) == "number" then
             out = tostring(tos_0)
-        elseif type(tos_0) == "table" and type(tos_0.tag == "array") then
+        elseif type(tos_0) == "table" and tos_0.tag == "array" then
             out = utils.printArray(tos_0)
-        elseif type(tos_0) == "closure" then
+        elseif type(tos_0) == "table" and tos_0.tag == "closure" then
             out = string.format("closure (%08x), arity: %d", tos_0.id, tos_0.arity)
+        elseif type(tos_0) == "table" and tos_0.tag == "null" then
+            out = "null"
         else
             out = tos_0
         end

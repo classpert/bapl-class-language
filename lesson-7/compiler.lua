@@ -230,6 +230,7 @@ local reserved = {
     ["switch"]   = true,
     ["case"]     = true,
     ["in"]       = true,
+    ["null"]     = true,
 }
 
 local function R(t)
@@ -295,6 +296,7 @@ local grammar = lpeg.P{
                 + lpeg.Ct(R"new" * (T"[" * expression * T"]")^1) /  processNew
                 + lpeg.Ct(T"{" * expression * (T"," * expression)^0 * T"}") / node("newconstr", "elements")
                 + numeral 
+                + R"null" / node("null", "_")
                 + T"(" * expression * T")"
                 + lhs,
     exponent    = lpeg.Ct((primary * opE)^0 * primary) / processOpR,
@@ -505,6 +507,9 @@ function Compiler:codeGenExp(ast)
     if node.tag == "number" then
         table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
         table.insert(self.code_, node.value)
+    elseif node.tag == "null" then
+        table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+        table.insert(self.code_, {tag = "null"})
     elseif node.tag == "binary_operator" then
         local op = OPCODES.make(node.value)
         table.insert(self.code_, op)
