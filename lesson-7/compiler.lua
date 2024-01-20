@@ -328,7 +328,8 @@ local grammar = lpeg.P{
     for2stmt    = (R"for" * variable * R"in" * expression * block) / node("for2_"),
     block       = T"{" * sequence * T";"^-1 * T"}" / node("block")
                 + (R("while") * expression * block) / node("while_", "condition", "whileblock")
-                + (R("function") * identifier * params * block) / node("function_", "identifier", "params", "block")
+                + (((R("function") * identifier * params * block) / node("function_", "identifier", "params", "block"))
+                *  ((R("and") * identifier * params * block)^0 / node("function_", "identifier", "params", "block"))) / node("functions_")
                 + ifstmt
                 + switchstmt
                 + for1stmt
@@ -358,7 +359,6 @@ function Compiler:new ()
         env_ = Tree:new({parent = nil, vars = {}, freevars = {}, localvars = {}}), 
         code_ = {}, 
         break_ctx_ = Stack:new(),
-        functions_ = {}
     }
     setmetatable(compiler, Compiler)
     return compiler
@@ -824,8 +824,8 @@ function Compiler:codeGenSeq(ast)
             self:codeGenExp(node.expression)
         end
         table.insert(self.code_, OPCODES.make(OPCODES.PRINT))
-    elseif node.tag == "function_" then
-        self:codeGenFunction(ast)
+    elseif node.tag == "functions_" then
+        self:codeGenFunctions(ast)
     elseif node.tag == "expr_as_statement" then
         self:codeGenExp(node.expression)
         table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop value
@@ -855,12 +855,13 @@ function Compiler:codeGenCall(ast)
 end
 
 
-function Compiler:rewriteFunc(ast, identifier, lhs_node)
+function Compiler:rewriteFunc(ast, func_block_id, identifiers, lhs_by)
     local node     = ast:node()
     local new_node = {}
     if node.tag == "assignment" and node.expression == nil then
         new_node = node
-    elseif node.tag == "assignment" and node.lhs:node().tag == "variable" and node.lhs:node().identifier == identifier then
+    elseif node.tag == "assignment" and node.lhs:node().tag == "variable" and identifiers[node.lhs:node().identifier] then
+        local lhs_node = lhs_by[node.lhs:node().identifier]:node()
         new_node = {
             tag = "assignment",
             lhs = Tree:new({
@@ -869,15 +870,16 @@ function Compiler:rewriteFunc(ast, identifier, lhs_node)
             }),
             expression = node.expression
         }
-    elseif node.tag == "variable" and node.identifier == identifier then
+    elseif node.tag == "variable" and identifiers[node.identifier] then
+        local lhs_node = lhs_by[node.identifier]:node()
         new_node = lhs_node
-    elseif node.tag == "function" and node.identifier == identifier then
+    elseif node.tag == "function" and node.identifier == func_block_id then
         new_node = ast -- we don't recurse further into functions it will be handled recursively.
     else
         for k, v in pairs(node) do
             local new_v = v
             if type(v) == "table" and v.__type == "Tree" then
-                new_v = self:rewriteFunc(v, identifier, lhs_node)
+                new_v = self:rewriteFunc(v, func_block_id, identifiers, lhs_by)
             end
             new_node[k] = new_v
         end
@@ -886,7 +888,7 @@ function Compiler:rewriteFunc(ast, identifier, lhs_node)
 
     local new_children = {}
     for _, c in ipairs(ast:children()) do
-        table.insert(new_children, self:rewriteFunc(c, identifier, lhs_node))
+        table.insert(new_children, self:rewriteFunc(c, func_block_id, identifiers, lhs_by))
     end
 
     return Tree:new(new_node, table.unpack(new_children))
@@ -909,77 +911,81 @@ end
 --
 -- 5. Create a variable with identifier <function-name> and assign .<function-name>[1] to this variable.
 --
-function Compiler:codeGenFunction(ast)
-    local node       = ast:node()
-    local identifier = node.identifier
-    local params     = node.params
+function Compiler:codeGenFunctions(ast)
+    local block_by        = {}
+    local params_by      = {}
+    local lhs_by         = {}
+    local array_assgn_by = {}
+    local func_assgn_by  = {}
+    local ident_assgn_by = {}
+    local identifiers    = {}
+    for _, func in ipairs(ast:children()) do
+        if func:node().identifier ~= "" then
+            local node       = func:node()
+            local identifier = node.identifier
+            local params     = node.params
+            block_by[identifier]  = node.block
+            params_by[identifier] = node.params 
+            lhs_by[identifier]    = Tree:new({
+                tag   = "indexed",
+                array = Tree:new({
+                    tag = "variable",
+                    identifier = "." .. identifier
+                }),
+                index = Tree:new({
+                    tag = "number",
+                    value = 1,
+                }),
+            })
+            array_assgn_by[identifier] = Tree:new({
+                tag = "assignment",
+                lhs = Tree:new({
+                    tag = "variable",
+                    identifier = "." .. identifier
+                }),
+                expression = Tree:new({
+                    tag = "new",
+                    size = Tree:new({
+                        tag = "number",
+                        value = 1,
+                    }),
+                })
+            })
+            ident_assgn_by[identifier] = Tree:new({
+                tag = "assignment",
+                lhs = Tree:new({
+                    tag = "variable",
+                    identifier = identifier
+                }),
+                expression = lhs_by[identifier]
+            })
 
-    local defined    = self.functions_[identifier]
-    local functions  = self.functions_
-    self.functions_  = {}
-
-    local lhs = Tree:new({
-        tag   = "indexed",
-        array = Tree:new({
-            tag = "variable",
-            identifier = "." .. identifier
-        }),
-        index = Tree:new({
-            tag = "number",
-            value = 1,
-        }),
-    })
-
-
-    local block = node.block or Tree:new({tag = "block"}, Tree:new({tag = "return"}))
-    local block = self:rewriteFunc(block, identifier, lhs:node())
-
-    local array_assgn = Tree:new({
-        tag = "assignment",
-        lhs = Tree:new({
-            tag = "variable",
-            identifier = "." .. identifier
-        }),
-        expression = Tree:new({
-            tag = "new",
-            size = Tree:new({
-                tag = "number",
-                value = 1,
-            }),
-        })
-    })
-
-    local func_assgn = Tree:new({
-        tag = "assignment",
-        lhs = lhs, 
-        expression = Tree:new({
-            tag = "lambda",
-            params = params,
-            block  = block 
-        })
-    })
-
-
-    local ident_assgn = Tree:new({
-        tag = "assignment",
-        lhs = Tree:new({
-            tag = "variable",
-            identifier = identifier
-        }),
-        expression = lhs
-    })
-
-    if not defined then
-        self:codeGenSeq(array_assgn)
-        print("DEBUG: not defined for ", identifier)
-    else
-        print("DEBUG: already defined for ", identifier)
+            identifiers[identifier] = true
+        end
     end
-    self:codeGenSeq(func_assgn)
-    self:codeGenSeq(ident_assgn)
 
-    self.functions_ = functions
-    self.functions_[identifier] = true
+    for identifier, _ in pairs(identifiers) do
+        block_by[identifier] = self:rewriteFunc(block_by[identifier], identifier, identifiers, lhs_by)
+        func_assgn_by[identifier] = Tree:new({
+            tag = "assignment",
+            lhs = lhs_by[identifier], 
+            expression = Tree:new({
+                tag = "lambda",
+                params = params_by[identifier],
+                block  = block_by[identifier] 
+            })
+        })
+    end
+    
+    for identifier, _ in pairs(identifiers) do
+        self:codeGenSeq(array_assgn_by[identifier])
+    end
+    for identifier, _ in pairs(identifiers) do
+        self:codeGenSeq(func_assgn_by[identifier])
+    end
+    for identifier, _ in pairs(identifiers) do
+        self:codeGenSeq(ident_assgn_by[identifier])
+    end
 end
 
 function Compiler:codeGenLambda(ast)

@@ -199,3 +199,37 @@ function fac(n)
 
 @ fac(5);
 
+
+function odd(n)
+{
+    if (n < 0)
+    {
+        return odd(-n);
+    }
+    elseif (n == 0)
+    {
+        return 0;
+    }
+    else
+    {
+        return even(n - 1);
+    }
+}
+and even(n)
+{
+    if (n < 0)
+    {
+        return even(-n);
+    }
+    elseif (n == 0)
+    {
+        return 1;
+    }
+    else
+    {
+        return odd(n - 1);
+    }
+}
+
+@ odd(10);
+@ even(10);
