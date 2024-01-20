@@ -279,7 +279,7 @@ local args       = lpeg.V"args"
 local grammar = lpeg.P{
     "program",
     program     = space * sequence,
-    primary     = (variable * args) / node("call", "variable", "params")
+    primary     = (lhs * args) / node("call", "lambdaexpr", "params")
                 + (R"lambda" * params * block) / node("lambda", "params", "block")
                 + lpeg.Ct(R"new" * (T"[" * expression * T"]")^1) /  processNew
                 + lpeg.Ct(T"{" * expression * (T"," * expression)^0 * T"}") / node("newconstr", "elements")
@@ -814,7 +814,7 @@ end
 
 function Compiler:codeGenCall(ast)
     local node       = ast:node()
-    local variable   = node.variable
+    local lambdaexpr = node.lambdaexpr
     local params     = node.params:children()
     
     for _, param in pairs(params) do
@@ -827,7 +827,7 @@ function Compiler:codeGenCall(ast)
     table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
     table.insert(self.code_, #params)
 
-    self:codeGenExp(variable)
+    self:codeGenExp(lambdaexpr)
     
     table.insert(self.code_, OPCODES.make(OPCODES.CALL))
 end

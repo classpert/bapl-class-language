@@ -171,6 +171,27 @@ c1 = counter (20);
 
 @ c1();
 
+flup = {0};
+fac = {0};
+fac[1] = lambda (x)
+{
+    @ x;
+    if x <= 1
+    {
+        return 1;
+    }
+    else
+    {
+        return fac[1](x - 1) * x;
+    }
+};
+
+
+@ fac[1](5);
+
+test = lambda () { return 100; };
+
+@ test() * 3;
 
 #{
 even_ref = &even;

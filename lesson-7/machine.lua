@@ -209,6 +209,15 @@ function utils.printArray(array, visited)
     return "{" .. table.concat(parts, ",") .. "}"
 end
 
+function utils.shallow_copy(array)
+    local copy = {}
+    for _, e in ipairs(array) do
+        table.insert(copy, e)
+    end
+    return copy
+end
+
+
 -- Create a 'Machine' and load the program in 'memory'.
 function Machine:new (ios)
     local ios = ios or io.stdout
@@ -401,7 +410,7 @@ function Machine:step ()
         assert(type(tos_0) == "table" and tos_0.tag == "closure", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected closure"}))
         assert(tos_0.arity == tos_1, make_error(ERROR_CODES.CLOSURE_ARITY, {message = "Expected " .. tos_1 .. " parameters."}))
         -- save current context
-        self.call_:push({code = self.code_, data = self.data_, pc = self.pc_ + 1})
+        self.call_:push({code = self.code_, data = utils.shallow_copy(self.data_), pc = self.pc_ + 1})
     
 
         self.code_ = tos_0.code
