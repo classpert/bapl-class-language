@@ -838,8 +838,9 @@ function Compiler:codeGenCall(ast)
     local node       = ast:node()
     local lambdaexpr = node.lambdaexpr
     local params     = node.params:children()
-    
-    for _, param in pairs(params) do
+  
+    for i = #params, 1, -1 do
+        local param = params[i]
         self:codeGenExp(param)
     end
     

@@ -233,3 +233,39 @@ and even(n)
 
 @ odd(10);
 @ even(10);
+
+function fib(n)
+{
+    if (n == 0)
+    {
+        return 0;
+    }
+    elseif (n == 1)
+    {
+        return 1; 
+    }
+    else
+    {
+        return fib(n - 1) + fib(n - 2);
+    }
+}
+
+@ fib(10);
+
+
+function fac_acc(n, acc)
+{
+    @ n;
+    @ acc;
+    if (n == 0)
+    {
+        return acc;
+    }
+    else
+    {
+        return fac_acc(n - 1, acc * n);
+    }
+}
+
+@ fac_acc(6, 1);
+
