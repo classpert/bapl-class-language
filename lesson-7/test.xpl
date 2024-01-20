@@ -160,14 +160,20 @@ counter = lambda (init)
     };
 };
 
+@ 10;
 c0 = counter (10);
 c1 = counter (20);
-
+@ 11;
 @ c0();
 @ c1();
 @ c0();
 @ c1();
 
+@ c1();
+
+
+#{
+even_ref = &even;
 
 odd = lambda (n)
 {
@@ -177,9 +183,11 @@ odd = lambda (n)
     }
     else
     {
-        return even(n - 1);
+        return *even_ref(n - 1);
     }
 };
+
+odd_ref = &odd;
 
 even = lambda (n)
 {
@@ -189,8 +197,9 @@ even = lambda (n)
     }
     else
     {
-        return odd(n - 1);
+        return *odd_ref(n - 1);
     }
 };
 
 @ even(10);
+#}

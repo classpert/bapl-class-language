@@ -341,13 +341,17 @@ local Compiler = {}
 Compiler.__index = Compiler
 
 function Compiler:new ()
-    local compiler = {env_ = Tree:new({parent = nil, vars = {}, freelist = {}}), code_ = {}, break_ctx_ = Stack:new()}
+    local compiler = {
+        env_ = Tree:new({parent = nil, vars = {}, freevars = {}, localvars = {}}), 
+        code_ = {}, 
+        break_ctx_ = Stack:new()
+    }
     setmetatable(compiler, Compiler)
     return compiler
 end
 
 
-function Compiler:envFindId(id, current_env)
+function Compiler:envFindIdUp(id, current_env)
     local current_env = current_env or self.env_:node()
     local vars        = current_env.vars
     if vars[id] then
@@ -355,12 +359,30 @@ function Compiler:envFindId(id, current_env)
     elseif current_env.parent == nil then
         return nil
     else
-        return Compiler:envFindId(id, current_env.parent:node())
+        return Compiler:envFindIdUp(id, current_env.parent:node())
     end
 end
 
+function Compiler:envFindIdDown(id, current_env)
+    local current_env = current_env or self.env_
+    local vars        = current_env:node().vars
+    if vars[id] then
+        return vars
+    elseif #current_env:children() == 0 then
+        return nil
+    else
+        for _, c in ipairs(current_env:children()) do
+            vars = self:envFindIdDown(id, c)
+            if vars then
+                return vars
+            end
+        end
+    end
+    return nil
+end
+
 function Compiler:envAddRef(id, ref)
-    local vars = self:envFindId(id) or self.env_:node().vars
+    local vars = self:envFindIdUp(id) or self.env_:node().vars
     local refinfo = vars[id] or {at = {}}
     table.insert(refinfo.at, ref)
     vars[id] = refinfo
@@ -372,6 +394,27 @@ end
 
 function Compiler:branchRelative(branch_instr, location)
     return OPCODES.make(branch_instr, location + 0x7fffffff)
+end
+
+
+function Compiler:genStore(id, mark)
+    local mark = mark or true
+    table.insert(self.code_, OPCODES.make(OPCODES.STORE))
+    table.insert(self.code_, 0xdeadc0de)
+    if mark and self:envFindIdUp(id) == nil then
+        table.insert(self.env_:node().localvars, id)
+    end
+    self:envAddRef(id, #self.code_)
+end
+
+function Compiler:genLoad(id, mark)
+    local mark = mark or true
+    table.insert(self.code_, OPCODES.make(OPCODES.LOAD))
+    table.insert(self.code_, 0xdeadc0de)
+    if mark and self:envFindIdUp(id) == nil then
+        table.insert(self.env_:node().freevars, id)
+    end
+    self:envAddRef(id, #self.code_)
 end
 
 
@@ -457,16 +500,8 @@ function Compiler:codeGenExp(ast)
     elseif node.tag == "variable" then
         -- Relax this condition now that we deal with lambdas / closures. Instead add it to the free list!
         -- check that the variable has been defined
-        -- assert(self:envFindId(node.identifier) ~= nil, make_error(ERROR_CODES.UNDEFINED_VARIABLE, {identifier = node.identifier}))
-        if self:envFindId(node.identifier) == nil then
-            table.insert(self.env_:node().freelist, node.identifier)
-        end
-
-        table.insert(self.code_, OPCODES.make(OPCODES.LOAD))
-        -- Insert a sentinel value. We will update this with an pointer to the storage 
-        -- of the variable during the program generation phase.
-        table.insert(self.code_, 0xdeadc0de)
-        self:envAddRef(node.identifier, #self.code_) -- Add a reference to identifier location
+        -- assert(self:envFindIdUp(node.identifier) ~= nil, make_error(ERROR_CODES.UNDEFINED_VARIABLE, {identifier = node.identifier}))
+        self:genLoad(node.identifier)
     elseif node.tag == "logical" then
         local left     = node.left
         local right    = node.right
@@ -521,12 +556,7 @@ function Compiler:codeGenAssignment(ast)
 
     if lhs.tag == "variable" then
         self:codeGenExp(expression)
-        -- Insert store instruction (pops TOS and writes to code[code[pc + 1]])
-        table.insert(self.code_, OPCODES.make(OPCODES.STORE))
-        -- Insert a sentinel value. We will update this with an pointer to the storage 
-        -- of the variable during the program generation phase.
-        table.insert(self.code_, 0xdeadc0de)
-        self:envAddRef(lhs.identifier, #self.code_)
+        self:genStore(lhs.identifier)
     elseif lhs.tag == "indexed" then
         self:codeGenExp(lhs.array)
         self:codeGenExp(lhs.index)
@@ -549,7 +579,7 @@ function Compiler:exitBreakContext()
 end
 
 function Compiler:codeGenBlock(ast)
-    self.env_ = Tree:new({parent = self.env_, vars = {}, freelist = {}})
+    self.env_ = Tree:new({parent = self.env_, vars = {}, freevars = {}, localvars = {}})
     self:codeGenSeq(ast:children()[1])
     local parent_children = self.env_:node().parent:children()
     table.insert(parent_children, self.env_)
@@ -723,11 +753,7 @@ function Compiler:codeGenSeq(ast)
         -- variable live in the global space.
         table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
         table.insert(self.code_, 0)
-        table.insert(self.code_, OPCODES.make(OPCODES.STORE))
-        -- Insert a sentinel value. We will update this with an pointer to the storage 
-        -- of the variable during the program generation phase.
-        table.insert(self.code_, 0xdeadc0de)
-        self:envAddRef(variable:node().identifier, #self.code_)
+        self:genStore(variable:node().identifier)
 
         self:enterBreakContext()
 
@@ -753,9 +779,7 @@ function Compiler:codeGenSeq(ast)
 
         -- Get array element at index and store loop variable.
         table.insert(self.code_, OPCODES.make(OPCODES.GETARRP))
-        table.insert(self.code_, OPCODES.make(OPCODES.STORE))
-        table.insert(self.code_, 0xdeadc0de)
-        self:envAddRef(variable:node().identifier, #self.code_)
+        self:genStore(variable:node().identifier)
 
         -- Generate for-body.
         self:codeGenSeq(body)
@@ -796,6 +820,12 @@ function Compiler:codeGenCall(ast)
     for _, param in pairs(params) do
         self:codeGenExp(param)
     end
+    
+    -- We put the number of parameters on the stack so we can
+    -- check in runtime whether or not we are trying to call
+    -- the lambda with incorrect number of variables.
+    table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+    table.insert(self.code_, #params)
 
     self:codeGenExp(variable)
     
@@ -808,7 +838,7 @@ function Compiler:codeGenLambda(ast)
     local block      = node.block
     -- Step 1: Generate code for closure.
     local env        = self.env_
-    local env_lambda = Tree:new({parent = nil, vars = {}, freelist = {}})
+    local env_lambda = Tree:new({parent = nil, vars = {}, freevars = {}, localvars = {}})
     self.env_        = env_lambda
 
     local code        = self.code_
@@ -820,9 +850,7 @@ function Compiler:codeGenLambda(ast)
 
     --- store params from signature (pushed to stack) into closure local storage.
     for _, param in pairs(params) do
-        table.insert(self.code_, OPCODES.make(OPCODES.STORE))
-        table.insert(self.code_, 0xdeadc0de)
-        self:envAddRef(param, #self.code_) -- Add a reference to identifier location
+        self:genStore(param)
     end
 
     -- generate the code for the lambda block
@@ -832,12 +860,14 @@ function Compiler:codeGenLambda(ast)
     table.insert(self.code_, OPCODES.make(OPCODES.RETURN))
 
     local closure = self:genProgramImage()
-
+    closure.arity = #params
     -- Step 2: generate code for creating side.
     -- restore state to current closure.
     self.env_ = env
     self.code_ = code
+   
     
+
     -- Push the partially formed closure or closure prototype onto the stack.
     table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
     table.insert(self.code_, closure)
@@ -848,15 +878,15 @@ function Compiler:codeGenLambda(ast)
 
     -- we now iterate over all variables in env_closure and issue STORE instructions 
     -- for the indices that contain free variables.
+    -- Freelist for the current lambda.
     for id, loc in self:freevariables(env_lambda) do
         table.insert(self.code_, OPCODES.make(OPCODES.DUP))
         table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
         table.insert(self.code_, loc)
-        table.insert(self.code_, OPCODES.make(OPCODES.LOAD))
-        table.insert(self.code_, 0xdeadc0de)
-        self:envAddRef(id, #self.code_) -- Add a reference to identifier in the current closure.
+        self:genLoad(id, false)
         table.insert(self.code_, OPCODES.make(OPCODES.SETARR))
     end
+
     table.insert(self.code_, OPCODES.make(OPCODES.CLOSURE))
 end
 
@@ -884,9 +914,9 @@ end
 -- This function generates freevariables indices and their storage location in the closure.
 function Compiler:freevariables(env)
     local function aux (env)
-        local freelist = env:node().freelist
+        local freevars = env:node().freevars
         local vars     = env:node().vars
-        for _, id in pairs(env:node().freelist) do
+        for _, id in pairs(env:node().freevars) do
             coroutine.yield (id, vars[id].data_loc) 
         end
 
@@ -907,7 +937,7 @@ function Compiler:genProgramImage(data)
     data = data or {}
     self:genData(self.env_, data)
 
-    return { tag = "closure", code = self.code_, data = data}
+    return { tag = "closure", code = self.code_, data = data, arity = 0}
 end
 
 function Compiler:syntaxErrorPayload(input, pos)

@@ -8,6 +8,7 @@ local ERROR_CODES = {
     -- runtime errors
     INDEX_OUT_OF_RANGE = 0xE301,
     TYPE_MISMATCH      = 0xE302,
+    CLOSURE_ARITY      = 0xE303,
 }
 local ERROR_MESSAGES = {
     [ERROR_CODES.SYNTAX]             = "Syntax Error",
@@ -15,6 +16,7 @@ local ERROR_MESSAGES = {
     [ERROR_CODES.UNEXPECTED_TAG]     = "Unexpected tag",
     [ERROR_CODES.NO_LOOP]            = "Break without a loop",
     [ERROR_CODES.INDEX_OUT_OF_RANGE] = "Index out of range",
+    [ERROR_CODES.CLOSURE_ARITY]                  = "Closure arity mis match",
 }
 
 local function make_error(code, payload)

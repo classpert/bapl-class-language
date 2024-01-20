@@ -392,13 +392,14 @@ function Machine:step ()
         local tos_0 = self.stack_:pop() -- array
         local tos_1 = self.stack_:pop() -- closure to be filled.
         assert(type(tos_1) == "table" and tos_1.tag == "closure", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected closure"}))
-        self.stack_:push({tag = "closure", code = tos_1.code, data = tos_0})
+        self.stack_:push({tag = "closure", code = tos_1.code, data = tos_0, arity = tos_1.arity})
 
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.CALL then
         local tos_0 = self.stack_:pop() -- the closure.
+        local tos_1 = self.stack_:pop() -- the arity.
         assert(type(tos_0) == "table" and tos_0.tag == "closure", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected closure"}))
-        
+        assert(tos_0.arity == tos_1, make_error(ERROR_CODES.CLOSURE_ARITY, {message = "Expected " .. tos_1 .. " parameters."}))
         -- save current context
         self.call_:push({code = self.code_, data = self.data_, pc = self.pc_ + 1})
     
