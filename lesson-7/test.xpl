@@ -294,3 +294,46 @@ r = range(-5, 0, 1.5);
 @ r();
 @ r();
 @ r();
+@ null == 1;
+
+
+function main()
+{
+    for x = 0; x < 10; x = x + 1
+    {
+        @ x;
+        if (x == 5)
+        {
+            break;
+        }
+    }
+}
+
+: main();
+
+@ len({0, 1, 2});
+
+function iterarray(a)
+{
+    index = 1;
+    size  = len(a);
+    return lambda()
+    {
+        if (index <= size)
+        {
+            temp = a[index];
+            index = index + 1;
+            return temp;
+        }
+        else
+        {
+            return null;
+        }
+    }
+}
+
+a = iterarray({5, 6, 7});
+@ a();
+@ a();
+@ a();
+@ a();

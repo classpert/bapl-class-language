@@ -231,6 +231,7 @@ local reserved = {
     ["case"]     = true,
     ["in"]       = true,
     ["null"]     = true,
+    ["len"]      = true,
 }
 
 local function R(t)
@@ -297,6 +298,7 @@ local grammar = lpeg.P{
                 + lpeg.Ct(T"{" * expression * (T"," * expression)^0 * T"}") / node("newconstr", "elements")
                 + numeral 
                 + R"null" / node("null", "_")
+                + R"len" * (expression / node("len"))
                 + T"(" * expression * T")"
                 + lhs,
     exponent    = lpeg.Ct((primary * opE)^0 * primary) / processOpR,
@@ -341,7 +343,7 @@ local grammar = lpeg.P{
                 + (R("return") * expression) / node("return", "expression")
                 + (R(":") * expression) / node("expr_as_statement", "expression") -- for side effects stack will be poped!
                 + (R("@") * expression) / node("print", "expression")
-                + (R("break")) / node("break_")
+                + (R("break")) / node("break_", "_")
                 + (assignment)^-1 / node("assignment", "lhs", "expression"),
     space       = grammar_space,
 }
@@ -563,6 +565,10 @@ function Compiler:codeGenExp(ast)
         self:codeGenLambda(ast)
     elseif node.tag == "call" then
         self:codeGenCall(ast)
+    elseif node.tag == "len" then
+        table.insert(self.code_, OPCODES.make(OPCODES.SIZEARR)) 
+        table.insert(self.code_, OPCODES.make(OPCODES.EXCH)) 
+        table.insert(self.code_, OPCODES.make(OPCODES.POP)) 
     else
         error(make_error(ERROR_CODES.UNEXPECTED_TAG, {tag = node.tag}))
     end
@@ -603,6 +609,58 @@ function Compiler:codeGenBlock(ast)
     local parent_children = self.env_:node().parent:children()
     table.insert(parent_children, self.env_)
     self.env_ = self.env_:node().parent
+end
+
+function Compiler:codeGenFor2Array(ast)
+    local node     = ast:node()
+    local variable = ast:children()[1]
+    local tablexpr = ast:children()[2]
+    local body     = ast:children()[3]
+    
+
+    table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+    table.insert(self.code_, 0)
+    self:genStore(variable:node().identifier)
+
+    self:enterBreakContext()
+
+    -- Table loop variable on stack.
+    table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+    table.insert(self.code_, 1)
+
+    -- Generate code for table expression.
+    self:codeGenExp(tablexpr)
+
+
+    local loop_location = self:nextCodeLoc()
+    -- Generate end-of-loop test.
+    table.insert(self.code_, OPCODES.make(OPCODES.SIZEARR))
+    table.insert(self.code_, OPCODES.make(OPCODES.INC))
+    table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 2)) 
+    table.insert(self.code_, OPCODES.make(OPCODES.DUP)) 
+    table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 3)) 
+    table.insert(self.code_, OPCODES.make(OPCODES.GE))
+    local eol_branch = self:nextCodeLoc()
+    table.insert(self.code_, 0xdeadc0de) -- branch to end of block
+    table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 1)) 
+
+    -- Get array element at index and store loop variable.
+    table.insert(self.code_, OPCODES.make(OPCODES.GETARRP))
+    self:genStore(variable:node().identifier)
+
+    -- Generate for-body.
+    self:codeGenSeq(body)
+    table.insert(self.code_, OPCODES.make(OPCODES.INC))
+    table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 1)) 
+    table.insert(self.code_, self:branchRelative(OPCODES.B, loop_location - self:nextCodeLoc()))
+    self.code_[eol_branch] =  self:branchRelative(OPCODES.BNZ, self:nextCodeLoc() - eol_branch)
+
+    self:exitBreakContext()
+   
+
+    -- Restore stack.
+    table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop table
+    table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop loop index
 end
 
 
@@ -763,57 +821,7 @@ function Compiler:codeGenSeq(ast)
 
         self:exitBreakContext()
     elseif node.tag == "for2_" then
-        local variable = ast:children()[1]
-        local tablexpr = ast:children()[2]
-        local body     = ast:children()[3]
-
-
-        -- TODO(peter): Here local (to a block / function  / scope) variables really make sense. For now we let the loop
-        -- variable live in the global space.
-        table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
-        table.insert(self.code_, 0)
-        self:genStore(variable:node().identifier)
-
-        self:enterBreakContext()
-
-        -- Table loop variable on stack.
-        table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
-        table.insert(self.code_, 1)
-
-        -- Generate code for table expression.
-        self:codeGenExp(tablexpr)
-
-
-        local loop_location = self:nextCodeLoc()
-        -- Generate end-of-loop test.
-        table.insert(self.code_, OPCODES.make(OPCODES.SIZEARR))
-        table.insert(self.code_, OPCODES.make(OPCODES.INC))
-        table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 2)) 
-        table.insert(self.code_, OPCODES.make(OPCODES.DUP)) 
-        table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 3)) 
-        table.insert(self.code_, OPCODES.make(OPCODES.GE))
-        local eol_branch = self:nextCodeLoc()
-        table.insert(self.code_, 0xdeadc0de) -- branch to end of block
-        table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 1)) 
-
-        -- Get array element at index and store loop variable.
-        table.insert(self.code_, OPCODES.make(OPCODES.GETARRP))
-        self:genStore(variable:node().identifier)
-
-        -- Generate for-body.
-        self:codeGenSeq(body)
-        table.insert(self.code_, OPCODES.make(OPCODES.INC))
-        table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 1)) 
-        table.insert(self.code_, self:branchRelative(OPCODES.B, loop_location - self:nextCodeLoc()))
-        self.code_[eol_branch] =  self:branchRelative(OPCODES.BNZ, self:nextCodeLoc() - eol_branch)
-
-        self:exitBreakContext()
-       
-
-        -- Restore stack.
-        table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop table
-        table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop loop index
-
+        self:codeGenFor2Array(ast)
     elseif node.tag == "block" then
         self:codeGenBlock(ast)
     elseif node.tag == "return" then

@@ -65,6 +65,9 @@ Machine.OPCODES.CALL      = 0xB7 -- Pop 1 element of the stack (the closure), se
                                  -- and begin executing from there.
 Machine.OPCODES.HALT      = 0xF0 -- Halt the machine,
 Machine.OPCODES.PRINT     = 0xF1 -- Pop TOS and Print TOS via io channel.
+Machine.OPCODES.ISNULL    = 0xF2 -- Pop TOS and Push null test to stack.
+Machine.OPCODES.ISCLS     = 0xF3 -- Pop TOS and Push closure test to stack.
+Machine.OPCODES.ISARR     = 0xF3 -- Pop TOS and Push array test to stack.
 function toBool (a)
     return (a ~= 0)
 end
@@ -129,6 +132,9 @@ Machine.OPCODES.NAME_LOOKUP = {
     [Machine.OPCODES.GETARRP]   = "GETARRP",
     [Machine.OPCODES.SIZEARR]   = "SIZEARR",
     [Machine.OPCODES.CLOSURE]   = "CLOSURE",
+    [Machine.OPCODES.ISNULL]    = "ISNULL",
+    [Machine.OPCODES.ISCLS]     = "ISCLS",
+    [Machine.OPCODES.ISARR]     = "ISARR",
     [Machine.OPCODES.CALL]      = "CALL",
     [Machine.OPCODES.HALT]      = "HALT",
     [Machine.OPCODES.PRINT]     = "PRINT",
@@ -459,6 +465,28 @@ function Machine:step ()
         local tos_0 = self.stack_:pop()
         assert(type(tos_0) == "number", make_error(ERROR_CODES.TYPE_MISMATCH, {message = "Expected number"}))
         self.stack_:push(tos_0 + 1) 
+        self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.ISNULL then
+        local tos_0 = self.stack_:pop()
+        self.stack_:push(type(tos_0) == "table" and tos_0.tag == "null") 
+        self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.ISCLS then
+        local tos_0 = self.stack_:pop()
+        self.stack_:push(type(tos_0) == "table" and tos_0.tag == "closure") 
+        self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.ISARR then
+        local tos_0 = self.stack_:pop()
+        self.stack_:push(type(tos_0) == "table" and tos_0.tag == "array") 
+        self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.EQ then
+        local tos_0 = self.stack_:pop()
+        local tos_1 = self.stack_:pop()
+        self.stack_:push(binop_fn(tos_1, tos_0))
+        self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.NEQ then
+        local tos_0 = self.stack_:pop()
+        local tos_1 = self.stack_:pop()
+        self.stack_:push(binop_fn(tos_1, tos_0))
         self.pc_ = self.pc_ + 1
     elseif binop_fn ~= nil then
         local tos_0 = self.stack_:pop()
