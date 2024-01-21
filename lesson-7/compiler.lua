@@ -232,6 +232,11 @@ local reserved = {
     ["in"]       = true,
     ["null"]     = true,
     ["len"]      = true,
+    ["stdin"]    = true,
+    ["stdout"]   = true,
+    ["stderr"]   = true,
+    ["write"]    = true,
+    ["read"]     = true,
 }
 
 local function R(t)
@@ -300,6 +305,7 @@ local grammar = lpeg.P{
                 + R"null" / node("null", "_")
                 + R"len" * (expression / node("len"))
                 + T"(" * expression * T")"
+                + (R"stdin" + R"stdout" + R"stderr") / node("stdio", "file")
                 + lhs,
     exponent    = lpeg.Ct((primary * opE)^0 * primary) / processOpR,
     negation    = lpeg.Ct(opN^0 * exponent) / processUnaryOp,
@@ -343,6 +349,8 @@ local grammar = lpeg.P{
                 + (R("return") * expression) / node("return", "expression")
                 + (R(":") * expression) / node("expr_as_statement", "expression") -- for side effects stack will be poped!
                 + (R("@") * expression) / node("print", "expression")
+                + (R"read" * T"(" * expression * T"," *  expression * T")") / node("ioread", "fileexpr", "bufexpr")
+                + (R"write" * T"(" * expression * T"," *  expression * T")") / node("iowrite", "fileexpr", "bufexpr")
                 + (R("break")) / node("break_", "_")
                 + (assignment)^-1 / node("assignment", "lhs", "expression"),
     space       = grammar_space,
@@ -569,6 +577,17 @@ function Compiler:codeGenExp(ast)
         table.insert(self.code_, OPCODES.make(OPCODES.SIZEARR)) 
         table.insert(self.code_, OPCODES.make(OPCODES.EXCH)) 
         table.insert(self.code_, OPCODES.make(OPCODES.POP)) 
+    elseif node.tag == "stdio" then
+        table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
+        if node.file == "stdin" then
+            table.insert(self.code_, {tag = "file", file=io.stdin})
+        elseif node.file == "stdout" then
+            table.insert(self.code_, {tag = "file", file=io.stdout})
+        elseif node.file == "stderr" then
+            table.insert(self.code_, {tag = "file", file=io.stderr})
+        else
+            error(make_error(ERROR_CODES.UNEXPECTED_VALUE, {tag = node.tag}))
+        end
     else
         error(make_error(ERROR_CODES.UNEXPECTED_TAG, {tag = node.tag}))
     end
@@ -833,6 +852,14 @@ function Compiler:codeGenSeq(ast)
     elseif node.tag == "expr_as_statement" then
         self:codeGenExp(node.expression)
         table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop value
+    elseif node.tag == "iowrite" then
+        self:codeGenExp(node.bufexpr)
+        self:codeGenExp(node.fileexpr)
+        table.insert(self.code_, OPCODES.make(OPCODES.WRITE))
+    elseif node.tag == "ioread" then
+        self:codeGenExp(node.bufexpr)
+        self:codeGenExp(node.fileexpr)
+        table.insert(self.code_, OPCODES.make(OPCODES.READ))
     else
         error(make_error(ERROR_CODES.UNEXPECTED_TAG, {tag = node.tag}))
     end

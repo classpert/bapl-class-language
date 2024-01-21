@@ -5,6 +5,7 @@ local ERROR_CODES = {
     UNDEFINED_VARIABLE = 0xE201,
     UNEXPECTED_TAG     = 0xE202,
     NO_LOOP            = 0xE203,
+    UNEXPECTED_VALUE   = 0xE204,
     -- runtime errors
     INDEX_OUT_OF_RANGE = 0xE301,
     TYPE_MISMATCH      = 0xE302,
@@ -14,6 +15,7 @@ local ERROR_MESSAGES = {
     [ERROR_CODES.SYNTAX]             = "Syntax Error",
     [ERROR_CODES.UNDEFINED_VARIABLE] = "Undefined variable",
     [ERROR_CODES.UNEXPECTED_TAG]     = "Unexpected tag",
+    [ERROR_CODES.UNEXPECTED_VALUE]   = "Unexpected value",
     [ERROR_CODES.NO_LOOP]            = "Break without a loop",
     [ERROR_CODES.INDEX_OUT_OF_RANGE] = "Index out of range",
     [ERROR_CODES.CLOSURE_ARITY]                  = "Closure arity mis match",

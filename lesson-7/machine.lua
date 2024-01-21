@@ -68,7 +68,11 @@ Machine.OPCODES.HALT      = 0xF0 -- Halt the machine,
 Machine.OPCODES.PRINT     = 0xF1 -- Pop TOS and Print TOS via io channel.
 Machine.OPCODES.ISNULL    = 0xF2 -- Pop TOS and Push null test to stack.
 Machine.OPCODES.ISCLS     = 0xF3 -- Pop TOS and Push closure test to stack.
-Machine.OPCODES.ISARR     = 0xF3 -- Pop TOS and Push array test to stack.
+Machine.OPCODES.ISARR     = 0xF4 -- Pop TOS and Push array test to stack.
+Machine.OPCODES.WRITE     = 0xF5 -- Pop 2 elements TOS(0) numbers (bytes) to write can be array or singular number and TOS(1) 
+                                 -- file object. Write byte(s) to fileobject.
+Machine.OPCODES.READ      = 0xF6 -- Pop 2 elements TOS(0) array and TOS(1) file. Read len(array) bytes from TOS(1).
+
 function toBool (a)
     return (a ~= 0)
 end
@@ -139,6 +143,8 @@ Machine.OPCODES.NAME_LOOKUP = {
     [Machine.OPCODES.CALL]      = "CALL",
     [Machine.OPCODES.HALT]      = "HALT",
     [Machine.OPCODES.PRINT]     = "PRINT",
+    [Machine.OPCODES.WRITE]     = "WRITE",
+    [Machine.OPCODES.READ]      = "READ",
 }
 
 Machine.OPCODES.make = function (variant, payload)
@@ -455,6 +461,36 @@ function Machine:step ()
         end
         
         self.io_:write(out .. "\n")
+        self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.WRITE then
+        local tos_0 = self.stack_:pop() -- file object.
+        local tos_1 = self.stack_:pop() -- array (bytes) or number (byte) to write.
+            
+        assert(type(tos_0) == "table" and tos_0.tag == "file", make_error(ERROR_CODES.TYPE_MISMATCH, {mesage = "Expected file"}))
+
+        if type(tos_1) == "table" and tos_1.tag == "array" then
+            local chars = {}
+            for _, c in ipairs(tos_1) do
+                table.insert(chars, string.char(c))
+            end
+            tos_0.file:write(table.concat(chars))
+        elseif type(tos_1) == "number" then
+            tos_0.file:write(string.char(tos_1))
+        end
+
+        self.pc_ = self.pc_ + 1
+    elseif op_variant == Machine.OPCODES.READ then
+        local tos_0 = self.stack_:pop() -- file object.
+        local tos_1 = self.stack_:pop() -- array 
+            
+        assert(type(tos_0) == "table" and tos_0.tag == "file", make_error(ERROR_CODES.TYPE_MISMATCH, {mesage = "Expected file"}))
+        assert(type(tos_1) == "table" and tos_1.tag == "array", make_error(ERROR_CODES.TYPE_MISMATCH, {mesage = "Expected array"}))
+
+        local buf = tos_0.file:read(tos_1.size)
+        for i = 1,#buf do
+            tos_1[i] = string.byte(buf, i)
+        end
+
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.DEC then
         local tos_0 = self.stack_:pop()
