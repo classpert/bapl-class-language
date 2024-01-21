@@ -8,6 +8,7 @@
 --
 --
 require 'elements/containers/stack'
+local inspect = require 'inspect'
 local errors = require 'errors'
 
 local ERROR_CODES = errors.ERROR_CODES
@@ -225,8 +226,8 @@ end
 
 function utils.shallow_copy(array)
     local copy = {}
-    for _, e in ipairs(array) do
-        table.insert(copy, e)
+    for k, e in pairs(array) do
+        copy[k] = e
     end
     return copy
 end
@@ -428,8 +429,7 @@ function Machine:step ()
         assert(tos_0.arity == tos_1, make_error(ERROR_CODES.CLOSURE_ARITY, {message = "Expected " .. tos_1 .. " parameters."}))
         -- save current context
         self.call_:push({code = self.code_, data = utils.shallow_copy(self.data_), pc = self.pc_ + 1})
-    
-
+        
         self.code_ = tos_0.code
         self.data_ = tos_0.data
         self.pc_   = 1
@@ -468,15 +468,15 @@ function Machine:step ()
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.ISNULL then
         local tos_0 = self.stack_:pop()
-        self.stack_:push(type(tos_0) == "table" and tos_0.tag == "null") 
+        self.stack_:push(fromBool(type(tos_0) == "table" and tos_0.tag == "null"))
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.ISCLS then
         local tos_0 = self.stack_:pop()
-        self.stack_:push(type(tos_0) == "table" and tos_0.tag == "closure") 
+        self.stack_:push(fromBool(type(tos_0) == "table" and tos_0.tag == "closure"))
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.ISARR then
         local tos_0 = self.stack_:pop()
-        self.stack_:push(type(tos_0) == "table" and tos_0.tag == "array") 
+        self.stack_:push(fromBool(type(tos_0) == "table" and tos_0.tag == "array"))
         self.pc_ = self.pc_ + 1
     elseif op_variant == Machine.OPCODES.EQ then
         local tos_0 = self.stack_:pop()

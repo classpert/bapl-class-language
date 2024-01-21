@@ -122,6 +122,9 @@ for x = 0; x < 5; x = x + 1
     }
 }
 
+
+#{
+
 for x in {1, 2, 3, 4}
 {
     @ x;
@@ -148,6 +151,7 @@ for x in {101, 102, 103, 104, 105, 106}
     n = n + 1;
 }
 
+#}
 
 counter = lambda (init)
 {
@@ -297,20 +301,6 @@ r = range(-5, 0, 1.5);
 @ null == 1;
 
 
-function main()
-{
-    for x = 0; x < 10; x = x + 1
-    {
-        @ x;
-        if (x == 5)
-        {
-            break;
-        }
-    }
-}
-
-: main();
-
 @ len({0, 1, 2});
 
 function iterarray(a)
@@ -337,3 +327,48 @@ a = iterarray({5, 6, 7});
 @ a();
 @ a();
 @ a();
+
+
+function main()
+{
+    for x in iterarray({3, 2, 1, 100, 110, 120})
+    {
+        @ x;
+        if (x >= 110)
+        {
+            break;
+        }
+    }
+
+    function iterarray2(a)
+    {
+        index = 1;
+        size  = len(a);
+        return lambda()
+        {
+            if (index <= size)
+            {
+                temp = a[index];
+                index = index + 1;
+                return temp;
+            }
+            else
+            {
+                return null;
+            }
+        }
+    }
+
+    y = { { 1, 2, 3}, {-5, -6, -7}, {0, 1, 0} };
+    for row in iterarray2(y)
+    {
+        for elem in iterarray(row)
+        {
+            @ elem;
+        }
+    }
+    @ 99;
+}
+
+: main();
+

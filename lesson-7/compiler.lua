@@ -442,7 +442,7 @@ function Compiler:constantFold (ast)
     end
     
     local children = {}
-    for _, child in pairs(ast:children()) do
+    for _, child in ipairs(ast:children()) do
         table.insert(children, self:constantFold(child))
     end
 
@@ -501,7 +501,7 @@ function Compiler:codeGenExp(ast)
     local ast = self:constantFold(ast)
     local node = ast:node()
 
-    for _, sub in pairs(ast:children()) do
+    for _, sub in ipairs(ast:children()) do
         self:codeGenExp(sub)
     end
     
@@ -611,10 +611,10 @@ function Compiler:codeGenBlock(ast)
     self.env_ = self.env_:node().parent
 end
 
-function Compiler:codeGenFor2Array(ast)
+function Compiler:codeGenForIterator(ast)
     local node     = ast:node()
     local variable = ast:children()[1]
-    local tablexpr = ast:children()[2]
+    local iterator = ast:children()[2]
     local body     = ast:children()[3]
     
 
@@ -624,34 +624,25 @@ function Compiler:codeGenFor2Array(ast)
 
     self:enterBreakContext()
 
-    -- Table loop variable on stack.
-    table.insert(self.code_, OPCODES.make(OPCODES.PUSH))
-    table.insert(self.code_, 1)
-
-    -- Generate code for table expression.
-    self:codeGenExp(tablexpr)
+    -- Generate code that leaves a closure at TOS of arity 0.
+    self:codeGenExp(iterator)
 
 
     local loop_location = self:nextCodeLoc()
     -- Generate end-of-loop test.
-    table.insert(self.code_, OPCODES.make(OPCODES.SIZEARR))
-    table.insert(self.code_, OPCODES.make(OPCODES.INC))
-    table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 2)) 
-    table.insert(self.code_, OPCODES.make(OPCODES.DUP)) 
-    table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 3)) 
-    table.insert(self.code_, OPCODES.make(OPCODES.GE))
+    table.insert(self.code_, OPCODES.make(OPCODES.DUP))  -- duplicate closure
+    table.insert(self.code_, OPCODES.make(OPCODES.PUSH)) -- push the arity 0
+    table.insert(self.code_, 0)
+    table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 1)) -- put arity below closure 
+    table.insert(self.code_, OPCODES.make(OPCODES.CALL))    -- call closure
+    table.insert(self.code_, OPCODES.make(OPCODES.DUP))     -- duplicate value
+    table.insert(self.code_, OPCODES.make(OPCODES.ISNULL))  -- test for null
     local eol_branch = self:nextCodeLoc()
     table.insert(self.code_, 0xdeadc0de) -- branch to end of block
-    table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 1)) 
-
-    -- Get array element at index and store loop variable.
-    table.insert(self.code_, OPCODES.make(OPCODES.GETARRP))
     self:genStore(variable:node().identifier)
 
     -- Generate for-body.
     self:codeGenSeq(body)
-    table.insert(self.code_, OPCODES.make(OPCODES.INC))
-    table.insert(self.code_, OPCODES.make(OPCODES.SWAP, 1)) 
     table.insert(self.code_, self:branchRelative(OPCODES.B, loop_location - self:nextCodeLoc()))
     self.code_[eol_branch] =  self:branchRelative(OPCODES.BNZ, self:nextCodeLoc() - eol_branch)
 
@@ -659,8 +650,8 @@ function Compiler:codeGenFor2Array(ast)
    
 
     -- Restore stack.
-    table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop table
-    table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop loop index
+    table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop null
+    table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop closure
 end
 
 
@@ -674,7 +665,7 @@ function Compiler:codeGenSeq(ast)
             -- skip empty assignment
         end
     elseif node.tag == "sequence" then
-        for _, sub in pairs(ast:children()) do
+        for _, sub in ipairs(ast:children()) do
             self:codeGenSeq(sub)
         end
     elseif node.tag == "if_" then
@@ -821,7 +812,7 @@ function Compiler:codeGenSeq(ast)
 
         self:exitBreakContext()
     elseif node.tag == "for2_" then
-        self:codeGenFor2Array(ast)
+        self:codeGenForIterator(ast)
     elseif node.tag == "block" then
         self:codeGenBlock(ast)
     elseif node.tag == "return" then
@@ -887,8 +878,8 @@ function Compiler:rewriteFunc(ast, func_block_id, identifiers, lhs_by)
     elseif node.tag == "variable" and identifiers[node.identifier] then
         local lhs_node = lhs_by[node.identifier]:node()
         new_node = lhs_node
-    elseif node.tag == "function" and node.identifier == func_block_id then
-        new_node = ast -- we don't recurse further into functions it will be handled recursively.
+    elseif node.tag == "function_" and node.identifier == func_block_id then
+        new_node = node -- we don't recurse further into functions it will be handled recursively.
     else
         for k, v in pairs(node) do
             local new_v = v
@@ -902,7 +893,11 @@ function Compiler:rewriteFunc(ast, func_block_id, identifiers, lhs_by)
 
     local new_children = {}
     for _, c in ipairs(ast:children()) do
-        table.insert(new_children, self:rewriteFunc(c, func_block_id, identifiers, lhs_by))
+        if type(c) == "table" and c.__type == "Tree" then
+            table.insert(new_children, self:rewriteFunc(c, func_block_id, identifiers, lhs_by))
+        else
+            table.insert(new_children, c)
+        end
     end
 
     return Tree:new(new_node, table.unpack(new_children))
@@ -1019,7 +1014,7 @@ function Compiler:codeGenLambda(ast)
     self.break_ctx_  = Stack:new()
 
     --- store params from signature (pushed to stack) into closure local storage.
-    for _, param in pairs(params) do
+    for _, param in ipairs(params) do
         self:genStore(param)
     end
 
@@ -1066,29 +1061,28 @@ end
 function Compiler:genData(env, data)
     local data = data or {}
     local vars = env:node().vars
-    for _, refinfo in pairs(vars) do
+    for id, refinfo in pairs(vars) do
         table.insert(data, 0)
         
         -- Store a referene to the position in the data segment. We will use this when filling free variables for a
         -- closure.
         refinfo.data_loc = #data
-        for _, loc in pairs(refinfo.at) do
+        for _, loc in ipairs(refinfo.at) do
             self.code_[loc] = #data
         end
     end
-    for _, c in pairs(env:children()) do
+    for _, c in ipairs(env:children()) do
         self:genData(c, data)
     end
     return data
 end
-
 
 -- This function generates freevariables indices and their storage location in the closure.
 function Compiler:freevariables(env)
     local function aux (env)
         local freevars = env:node().freevars
         local vars     = env:node().vars
-        for _, id in pairs(env:node().freevars) do
+        for _, id in ipairs(env:node().freevars) do
             coroutine.yield (id, vars[id].data_loc) 
         end
 
