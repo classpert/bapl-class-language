@@ -347,6 +347,7 @@ local grammar = lpeg.P{
     assignment  = lhs * opAssign * expression,
     statement   = block 
                 + (R("return") * expression) / node("return", "expression")
+                + (variable * args) / node("call_as_statement", "lambdaexpr", "params")
                 + (R(":") * expression) / node("expr_as_statement", "expression") -- for side effects stack will be poped!
                 + (R("@") * expression) / node("print", "expression")
                 + (R"read" * T"(" * expression * T"," *  expression * T")") / node("ioread", "fileexpr", "bufexpr")
@@ -860,6 +861,9 @@ function Compiler:codeGenSeq(ast)
         self:codeGenExp(node.bufexpr)
         self:codeGenExp(node.fileexpr)
         table.insert(self.code_, OPCODES.make(OPCODES.READ))
+    elseif node.tag == "call_as_statement" then
+        self:codeGenCall(ast)
+        table.insert(self.code_, OPCODES.make(OPCODES.POP)) -- pop value
     else
         error(make_error(ERROR_CODES.UNEXPECTED_TAG, {tag = node.tag}))
     end

@@ -171,6 +171,8 @@ function utils.printStep(pc, op, operand, tos, stacksize)
         tos_string = string.format("C:%08x", tos.id)
     elseif type(tos) == "table" and tos.tag == "null" then
         tos_string = string.format("%9s", "null")
+    elseif type(tos) == "table" and tos.tag == "file" then
+        tos_string = string.format("%9s", "file")
     else
         tos_string = tostring(tos)
     end
@@ -186,6 +188,8 @@ function utils.printStep(pc, op, operand, tos, stacksize)
         operand_string = string.format("%08x", operand)
     elseif type(operand) == "table" and operand.tag == "null" then
         operand_string = "null"
+    elseif type(operand) == "table" and operand.tag == "file" then
+        operand_string = "file"
     elseif operand then
         operand_string = tostring(operand)
     end
