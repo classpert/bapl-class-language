@@ -372,6 +372,7 @@ function Compiler:new ()
         env_ = Tree:new({parent = nil, vars = {}, freevars = {}, localvars = {}}), 
         code_ = {}, 
         break_ctx_ = Stack:new(),
+        top_ = true,
     }
     setmetatable(compiler, Compiler)
     return compiler
@@ -529,8 +530,10 @@ function Compiler:codeGenExp(ast)
         table.insert(self.code_, op)
     elseif node.tag == "variable" then
         -- Relax this condition now that we deal with lambdas / closures. Instead add it to the free list!
-        -- check that the variable has been defined
-        -- assert(self:envFindIdUp(node.identifier) ~= nil, make_error(ERROR_CODES.UNDEFINED_VARIABLE, {identifier = node.identifier}))
+        -- check that the variable has been defined only at the top level (uknown variables in closure will propagate).
+        if self.top_ then
+            assert(self:envFindIdUp(node.identifier) ~= nil, make_error(ERROR_CODES.UNDEFINED_VARIABLE, {identifier = node.identifier}))
+        end
         self:genLoad(node.identifier)
     elseif node.tag == "logical" then
         local left     = node.left
@@ -624,11 +627,7 @@ function Compiler:exitBreakContext()
 end
 
 function Compiler:codeGenBlock(ast)
-    self.env_ = Tree:new({parent = self.env_, vars = {}, freevars = {}, localvars = {}})
     self:codeGenSeq(ast:children()[1])
-    local parent_children = self.env_:node().parent:children()
-    table.insert(parent_children, self.env_)
-    self.env_ = self.env_:node().parent
 end
 
 function Compiler:codeGenForIterator(ast)
@@ -1044,6 +1043,8 @@ function Compiler:codeGenLambda(ast)
     local break_ctx  = self.break_ctx_
     self.break_ctx_  = Stack:new()
 
+    local top        = self.top_
+    self.top_        = false
     --- store params from signature (pushed to stack) into closure local storage.
     for _, param in ipairs(params) do
         self:genStore(param)
@@ -1064,7 +1065,7 @@ function Compiler:codeGenLambda(ast)
     self.env_      = env
     self.code_     = code
     self.break_ctx_ = break_ctx
-    
+    self.top_      = top 
 
     -- Push the partially formed closure or closure prototype onto the stack.
     table.insert(self.code_, OPCODES.make(OPCODES.PUSH))

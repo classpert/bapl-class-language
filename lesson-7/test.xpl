@@ -368,6 +368,39 @@ function main()
         }
     }
     write(stdout, {0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x57, 0x6f, 0x72, 0x6c, 0x64, 0x21, 0x0a});
+
+    function range(start, stop)
+    {
+        current = start;
+        return lambda ()
+        {
+            if (current <= stop)
+            {
+                temp = current;
+                current = current + 1;
+                return temp;
+            }
+            else
+            {
+                return null;
+            }
+        };
+    }
+
+    function linefeed()
+    {
+        write(stdout, 0x0a);
+    }
+    
+    for c in range(0x20, 0x7e)
+    {
+        write(stdout, c);
+        if (c % 16 == 0)
+        {
+            linefeed();
+        }
+    }
+
 }
 
 main();

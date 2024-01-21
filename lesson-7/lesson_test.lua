@@ -35,7 +35,7 @@ TestMachine = {}
         -- Regression
         lu.assertEquals(eval("x = 2.3; y = 4.3 + -2.0^(2 - 3.3); z = x^2 + y^2; return z; z = 20"), 2.3^2 + (4.3 + -2.0^(2 - 3.3))^2)
         lu.assertEquals(eval_print("z = 10; @ z; @ z^2"), {"10\n", "100.0\n"})
-        lu.assertEquals(eval("z = x + y; @ z; return z"), 0) -- defualt value of uknown params == 0
+        lu.assertError(eval, "z = x + y; @ z; return z")
 
         status, data = pcall(compiler.compile, "x = 10  ;{};;{ ;;;};;y = 5   ;  \n\n_letter = 3 * ) \t\n\n\n")
         lu.assertFalse(status)
@@ -182,8 +182,7 @@ TestMachine = {}
         
         -- Block scoping.
         lu.assertEquals(eval("x = 10; { y = 15; x = x + y; } return x;"), 25)
-        lu.assertEquals(eval("x = 10; { y = 15; x = x + y; } return y;"), 0)
-
+        lu.assertEquals(eval("x = 10; { y = 15; x = x + y; } return y;"), 15);
 
         -- Functions
         lu.assertEquals(eval("f = lambda () { return 10; }; return f();"), 10)
